@@ -463,7 +463,7 @@ def main():
         # 正确调用预测函数
         predictions = predict_with_xgb(df_model, feature_cols)
 
-        df.to_csv(f'prediction_results/prediction_{target_var}_result.csv', index=False)
+        df.to_csv(f'../prediction_results/prediction_{target_var}_result.csv', index=False)
     
     print("预测完成！")
 

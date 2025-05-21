@@ -439,7 +439,7 @@ def main():
             print(future_predictions.head())
             
             # 保存预测结果
-            output_path = f'./prediction_results/{target_var}_future_predictions.csv'
+            output_path = f'../prediction_results/{target_var}_future_predictions.csv'
             future_predictions.to_csv(output_path, index=False)
             print(f"预测结果已保存到 {output_path}")
             
