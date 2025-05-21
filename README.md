@@ -23,24 +23,6 @@ Each version includes preprocessing, training, and prediction components.
 
 Detailed data field descriptions can be found in the ML Engine documentation.
 
-#### Basic Features (v1)
-- user
-- hour
-- resource_request_cpu
-- resource_request_memory
-- average_usage_cpu
-- average_usage_memory
-- maximum_usage_cpu
-- maximum_usage_memory
-
-#### Advanced Features (v2)
-In addition to basic features:
-- Detailed time features (hour, day of week, month, etc.)
-- Cyclical encoding for temporal variables
-- Lag features for time series analysis
-- Rolling window statistics (mean, std, min, max)
-- Resource utilization metrics
-
 ## Future Development
 
 ### Backend Services (Planned)
