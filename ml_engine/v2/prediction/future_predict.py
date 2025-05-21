@@ -421,6 +421,11 @@ def main():
         print("无法创建未来时间点，程序终止")
         return
     
+    output_dir = "../prediction_results"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"创建输出目录: {output_dir}")
+
     # 进行未来预测
     try:
         future_predictions = predict_future_values(
@@ -434,7 +439,7 @@ def main():
             print(future_predictions.head())
             
             # 保存预测结果
-            output_path = f'{target_var}_future_predictions.csv'
+            output_path = f'./prediction_results/{target_var}_future_predictions.csv'
             future_predictions.to_csv(output_path, index=False)
             print(f"预测结果已保存到 {output_path}")
             

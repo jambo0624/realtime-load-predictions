@@ -33,14 +33,6 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', 100)
 pd.set_option('display.width', 1000)
 
-# 加载模型和scaler
-try:
-    xgb_model = joblib.load('./models/xgb_model_colab.pkl')
-    scaler = joblib.load('./models/scaler_colab.pkl')
-    print("成功加载模型和scaler")
-except FileNotFoundError as e:
-    print(f"错误: 无法找到模型文件: {e}")
-    exit(1)
 
 # 1. 数据加载与探索
 def load_and_explore_data(data_path):
@@ -102,30 +94,22 @@ def process_time_features(df):
 
 
 # 3. 特征工程
-def create_time_features(df, time_col='time_dt'):
+def create_time_features(df):
     """从时间列创建丰富的时间特征"""
     print("\n创建时间特征...")
     
-    # 确保列存在
-    if time_col not in df.columns:
-        print(f"列 {time_col} 不存在")
+    if 'time_dt' not in df.columns:
+        print("列 time_dt 不存在，无法创建时间特征")
         return df
     
-    # 复制数据框以避免修改原始数据
-    df_new = df.copy()
-    
-    # 确保时间列是datetime类型
-    df_new[time_col] = pd.to_datetime(df_new[time_col])
-    print(f"转换 {time_col} 为datetime类型")
-    
     # 从datetime创建特征
-    df_new['hour_of_day'] = df_new[time_col].dt.hour
-    df_new['day_of_week'] = df_new[time_col].dt.dayofweek
-    df_new['day_of_month'] = df_new[time_col].dt.day
-    df_new['month'] = df_new[time_col].dt.month
+    df['hour_of_day'] = df['time_dt'].dt.hour
+    df['day_of_week'] = df['time_dt'].dt.dayofweek
+    df['day_of_month'] = df['time_dt'].dt.day
+    df['month'] = df['time_dt'].dt.month
     
     # 创建周末指标 (0=工作日, 1=周末)
-    df_new['is_weekend'] = df_new['day_of_week'].apply(lambda x: 1 if x >= 5 else 0)
+    df['is_weekend'] = df['day_of_week'].apply(lambda x: 1 if x >= 5 else 0)
     
     # 创建一天中的时段分类
     def get_day_part(hour):
@@ -138,18 +122,19 @@ def create_time_features(df, time_col='time_dt'):
         else:
             return 'night'
     
-    df_new['day_part'] = df_new['hour_of_day'].apply(get_day_part)
+    df['day_part'] = df['hour_of_day'].apply(get_day_part)
     
     # 对时段进行独热编码
-    df_new = pd.get_dummies(df_new, columns=['day_part'], prefix='day_part')
+    df = pd.get_dummies(df, columns=['day_part'], prefix='day_part')
     
     # 创建小时和日期的周期性特征（正弦和余弦变换）
-    df_new['hour_sin'] = np.sin(2 * np.pi * df_new['hour_of_day'] / 24)
-    df_new['hour_cos'] = np.cos(2 * np.pi * df_new['hour_of_day'] / 24)
-    df_new['day_sin'] = np.sin(2 * np.pi * df_new['day_of_week'] / 7)
-    df_new['day_cos'] = np.cos(2 * np.pi * df_new['day_of_week'] / 7)
+    df['hour_sin'] = np.sin(2 * np.pi * df['hour_of_day'] / 24)
+    df['hour_cos'] = np.cos(2 * np.pi * df['hour_of_day'] / 24)
+    df['day_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
+    df['day_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
     
-    return df_new
+    print("时间特征创建完成")
+    return df
 
 
 def create_lag_features(df, target_cols, lag_periods=[1, 3, 6, 12, 24]):
@@ -334,71 +319,60 @@ def prepare_data_for_modeling(df, target_vars):
     print("数据准备完成")
     return df
 
-def predict_with_xgb(df, feature_cols):
-    """使用XGBoost模型进行预测"""
-    try:
-        xgb_model = globals()['xgb_model']
-        scaler = globals()['scaler']
-        # 验证模型和scaler是否成功加载
-        if xgb_model is None:
-            print("错误: 模型未成功加载，无法进行预测")
-            return None
-            
-        if scaler is None:
-            print("错误: scaler未成功加载，无法进行预测")
-            return None
-            
-        # 检查特征列是否存在
-        if isinstance(feature_cols, str):
-            feature_cols = [feature_cols]  # 如果是单个字符串，转为列表
-            
-        print(f"使用特征 {len(feature_cols)} 个特征进行预测")
-        X = df[feature_cols]
-        
-        # 处理特征不匹配问题
-        # 1. 获取scaler期望的特征列
-        if hasattr(scaler, 'feature_names_in_'):
-            expected_features = scaler.feature_names_in_
-        else:
-            print("警告: scaler没有feature_names_in_属性，无法确定期望的特征列")
-            expected_features = feature_cols
-            
-        print(f"模型期望的特征数量: {len(expected_features)}")
-        
-        # 2. 确保X的列与expected_features匹配
-        # 移除多余的特征
-        X_subset = X.copy()
-        extra_cols = [col for col in X_subset.columns if col not in expected_features]
-        if extra_cols:
-            print(f"警告: 移除了 {len(extra_cols)} 个训练时未见过的特征: {extra_cols}")
-            X_subset = X_subset.drop(columns=extra_cols)
-        
-        # 添加缺失的特征
-        missing_cols = [col for col in expected_features if col not in X_subset.columns]
-        if missing_cols:
-            print(f"警告: 添加了 {len(missing_cols)} 个缺失的特征: {missing_cols}, 并用0填充")
-            for col in missing_cols:
-                X_subset[col] = 0
-                
-        # 确保列顺序与训练时一致
-        X_subset = X_subset[expected_features]
-        
-        print(f"调整后的特征形状: {X_subset.shape}")
-        
-        # 检查数据维度
-        if len(X_subset.shape) == 1:
-            X_subset = X_subset.values.reshape(-1, 1)
-            print("已将输入数据重塑为2D数组")
-            
-        X_scaled = scaler.transform(X_subset)
-        y_pred = xgb_model.predict(X_scaled)
-        print(f"成功生成 {len(y_pred)} 个预测")
-        return y_pred
-    except Exception as e:
-        print(f"预测过程中出错: {e}")
-        import traceback
-        traceback.print_exc()  # 打印详细错误信息
-        return None
+
+# 4. 模型构建与评估
+def evaluate_models(df, target_var, test_size=0.2, random_state=42):
+    """构建和评估多种预测模型"""
+    print(f"\n为 {target_var} 评估预测模型...")
+    
+    # 准备特征和目标
+    y = df[target_var]
+    X = df.drop(columns=[col for col in df.columns if col in [target_var] or col.startswith('time_')])
+    
+    print(f"特征数量: {X.shape[1]}")
+    print(f"样本数量: {X.shape[0]}")
+    
+    # 创建训练集和测试集 (时间序列分割)
+    # 为确保我们不用未来数据预测过去，使用最后test_size比例的数据作为测试集
+    split_idx = int(len(X) * (1 - test_size))
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+    
+    print(f"训练集形状: {X_train.shape}, 测试集形状: {X_test.shape}")
+    
+    # 特征标准化
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    # 模型结果存储
+    model_results = []
+    
+    # 1. XGBoost
+    print("\n训练XGBoost...")
+    xgb_model = xgb.XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=random_state)
+    xgb_model.fit(X_train_scaled, y_train)
+    
+    # 预测
+    xgb_preds = xgb_model.predict(X_test_scaled)
+    
+    # 评估
+    rmse = np.sqrt(mean_squared_error(y_test, xgb_preds))
+    mae = mean_absolute_error(y_test, xgb_preds)
+    r2 = r2_score(y_test, xgb_preds)
+    
+    print(f"XGBoost - RMSE: {rmse:.6f}, MAE: {mae:.6f}, R²: {r2:.6f}")
+    model_results.append({"model": "XGBoost", "rmse": rmse, "mae": mae, "r2": r2})
+    
+    # 汇总结果
+    results_df = pd.DataFrame(model_results)
+    results_df = results_df.sort_values('rmse')
+    
+    print("\n模型性能汇总:")
+    print(results_df)
+    
+    # 返回最佳模型和评估结果
+    return results_df, feature_importance
 
 # 主函数
 def main():
@@ -406,7 +380,7 @@ def main():
     print("开始高级负载预测建模...")
     
     # 1. 加载数据
-    data_path = 'processed_all_fields_data/c7_user_DrrEIEW_timeseries.csv'
+    data_path = '../processed_data/c7_user_DrrEIEW_timeseries.csv'
     df = load_and_explore_data(data_path)
     
     if df is None:
@@ -450,17 +424,12 @@ def main():
             cols_to_drop.extend([col for col in df_clean.columns if col.startswith(f"{other_target}_rolling_")])
         
         df_model = df_clean.drop(columns=cols_to_drop, errors='ignore')
-
-        # 获取所有特征列（排除目标变量）
-        feature_cols = [col for col in df_model.columns if col != target_var]
-        print(f"使用 {len(feature_cols)} 个特征列进行预测")
-
-        # 正确调用预测函数
-        predictions = predict_with_xgb(df_model, feature_cols)
-
-        df.to_csv(f'prediction_{target_var}_result.csv', index=False)
+        
+        # 构建和评估模型
+        evaluate_models(df_model, target_var)
+        
     
-    print("预测完成！")
+    print("建模完成！")
 
 
 if __name__ == "__main__":

@@ -1,47 +1,56 @@
-# 实时负载预测与资源管理
+# Real-time Load Prediction
 
-## 项目说明
-该项目专注于利用Google集群数据集进行负载预测和资源使用分析。项目包含多个建模方法，从基础到高级，以提高预测精度。
+A comprehensive platform for predicting and managing compute resource usage in real-time.
 
-## 文件说明
+## Project Structure
 
-### 主要脚本
-- `main.ipynb`: 初始数据预处理笔记本
-- `main2.ipynb`: 基础预测模型实现
-- `main3.py`: 高级预测模型，包含更丰富的特征工程和改进的模型架构
+This project is organized into three main components:
 
-### main3.py - 高级建模方法
-main3.py 是本项目的核心建模脚本，通过以下关键改进提高预测性能：
+- **ML Engine**: Machine learning models for predicting CPU and memory usage
+- **Backend**: API services and data processing pipelines (future development)
+- **Frontend**: User interface for visualizing predictions and metrics (future development)
 
-1. **增强的特征工程**:
-   - 丰富的时间特征（小时周期性、日期周期性、工作日/周末区分等）
-   - 任务特性特征（优先级、调度类别等）
-   - 资源使用率特征（CPU/内存使用率、资源平衡比率）
-   - 滞后特征和滚动窗口特征（捕捉时间序列依赖性）
-   - 高级计算指标（计算密集型指标、缓存使用比例）
+## ML Engine
 
-2. **多种模型比较**:
-   - ARIMA 时间序列模型
-   - 随机森林回归器
-   - XGBoost（梯度提升）
-   - LSTM 深度学习模型（适用于复杂时间序列）
+The ML Engine contains two versions of our prediction models:
 
-3. **严格的时间序列验证**:
-   - 时间顺序分割训练/测试集
-   - 确保不使用未来数据预测过去
+- **Version 1 (v1)**: Basic implementation with limited features
+- **Version 2 (v2)**: Advanced implementation with rich feature engineering
 
-4. **特征重要性分析**:
-   - 输出每个目标变量的特征重要性排名
-   - 帮助理解哪些因素最影响资源使用
+Each version includes preprocessing, training, and prediction components.
 
-## 使用方法
-```
-python main3.py
-```
+### Data Features
 
-脚本会自动从`processed_all_fields_data`目录加载数据，进行特征工程，训练多种模型，并输出性能比较结果。
+Detailed data field descriptions can be found in the ML Engine documentation.
 
-## 输出内容
-- 模型结果CSV文件（每个目标变量一个）
-- 特征重要性CSV文件（每个目标变量一个）
-- 预测可视化图表
+#### Basic Features (v1)
+- user
+- hour
+- resource_request_cpu
+- resource_request_memory
+- average_usage_cpu
+- average_usage_memory
+- maximum_usage_cpu
+- maximum_usage_memory
+
+#### Advanced Features (v2)
+In addition to basic features:
+- Detailed time features (hour, day of week, month, etc.)
+- Cyclical encoding for temporal variables
+- Lag features for time series analysis
+- Rolling window statistics (mean, std, min, max)
+- Resource utilization metrics
+
+## Future Development
+
+### Backend Services (Planned)
+- REST API for prediction services
+- Data streaming and processing pipelines
+- Authentication and authorization
+- Monitoring and logging services
+
+### Frontend (Planned)
+- Interactive dashboards for resource usage visualization
+- Prediction analysis and exploration tools
+- User management interface
+- Alert configuration for resource anomalies
