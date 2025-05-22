@@ -17,7 +17,8 @@ This directory contains the second version of the real-time load prediction proj
 - `preprocessing/`: Advanced data cleaning and feature engineering
 - `training/`: Enhanced model training with hyperparameter tuning
 - `prediction/`: Scripts for both current data prediction and future forecasting
-- `processed_data/`: Feature-engineered dataset ready for training
+- `processed_data/`: Processed data
+  - `visualization.ipynb`: Visualization of the processed data
 - `models/`: Trained model artifacts, scaler, and feature importance analysis
 - `prediction_results/`: Standard and future prediction outputs
 
@@ -99,10 +100,3 @@ Compared to Version 1, this implementation includes:
 - `cpu_utilization_ratio`: Ratio of actual CPU usage to requested resources
 - `memory_utilization_ratio`: Ratio of actual memory usage to requested resources
 - `resource_balance_ratio`: Ratio between CPU and memory utilization
-
-## Directory Structure
-- `preprocessing/`: Advanced data cleaning and feature engineering
-- `processed_data/`: Processed data
-  - `visualization.ipynb`: Visualization of the processed data
-- `training/`: Enhanced model training with hyperparameter tuning
-- `prediction/`: Scripts for both current data prediction and future forecasting 
