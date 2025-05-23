@@ -10,15 +10,6 @@ This project is organized into three main components:
 - **Backend**: API services and data processing pipelines (future development)
 - **Frontend**: User interface for visualizing predictions and metrics (future development)
 
-## ML Engine
-
-The ML Engine contains two versions of our prediction models:
-
-- **Version 1 (v1)**: Basic implementation with limited features
-- **Version 2 (v2)**: Advanced implementation with rich feature engineering
-
-Each version includes preprocessing, training, and prediction components.
-
 ### Data Features
 
 Detailed data field descriptions can be found in the ML Engine documentation.
