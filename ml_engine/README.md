@@ -128,7 +128,6 @@ Prediction outputs include:
 ## Metrics
 
 The models are evaluated using:
-- Mean Squared Error (MSE)
 - Root Mean Squared Error (RMSE)
 - Mean Absolute Error (MAE)
 - R² (Coefficient of determination)
