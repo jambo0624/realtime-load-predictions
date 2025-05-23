@@ -170,108 +170,6 @@ def create_rolling_features(df, target_cols, windows=[3, 6, 12, 24]):
     return df
 
 
-def create_utilization_features(df):
-    """创建资源使用率特征"""
-    print("\n创建资源使用率特征...")
-    
-    # 检查必要的列是否存在
-    if 'resource_request_cpu' in df.columns and 'average_usage_cpu' in df.columns:
-        # CPU使用率 = 实际使用 / 请求资源
-        df['cpu_utilization_ratio'] = df['average_usage_cpu'] / df['resource_request_cpu']
-        # 处理无穷值
-        df['cpu_utilization_ratio'] = df['cpu_utilization_ratio'].replace([np.inf, -np.inf], np.nan)
-        # 上限为1（100%利用率）
-        df['cpu_utilization_ratio'] = df['cpu_utilization_ratio'].clip(upper=1.0)
-        print("创建了CPU使用率特征")
-    
-    if 'resource_request_memory' in df.columns and 'average_usage_memory' in df.columns:
-        # 内存使用率 = 实际使用 / 请求资源
-        df['memory_utilization_ratio'] = df['average_usage_memory'] / df['resource_request_memory']
-        # 处理无穷值
-        df['memory_utilization_ratio'] = df['memory_utilization_ratio'].replace([np.inf, -np.inf], np.nan)
-        # 上限为1（100%利用率）
-        df['memory_utilization_ratio'] = df['memory_utilization_ratio'].clip(upper=1.0)
-        print("创建了内存使用率特征")
-    
-    # 资源效率比率（如果CPU和内存指标都存在）
-    if 'cpu_utilization_ratio' in df.columns and 'memory_utilization_ratio' in df.columns:
-        # 资源平衡指标（接近1表示CPU和内存使用平衡）
-        df['resource_balance_ratio'] = df['cpu_utilization_ratio'] / df['memory_utilization_ratio']
-        # 处理无穷值
-        df['resource_balance_ratio'] = df['resource_balance_ratio'].replace([np.inf, -np.inf], np.nan)
-        print("创建了资源平衡比率特征")
-    
-    print("资源使用率特征创建完成")
-    return df
-
-
-def process_task_features(df):
-    """处理任务特性特征"""
-    print("\n处理任务特性特征...")
-    
-    task_features = ['priority', 'scheduling_class', 'collection_type', 'vertical_scaling', 'instance_index', 'failed']
-    task_features = [col for col in task_features if col in df.columns]
-    
-    if task_features:
-        print(f"发现任务特性特征: {task_features}")
-        
-        # 对分类特征进行独热编码
-        categorical_features = []
-        for col in task_features:
-            if df[col].dtype == 'object' or df[col].nunique() < 10:  # 分类特征判断条件
-                categorical_features.append(col)
-        
-        if categorical_features:
-            print(f"将进行独热编码的分类特征: {categorical_features}")
-            df = pd.get_dummies(df, columns=categorical_features, prefix=categorical_features)
-    else:
-        print("未找到任务特性特征")
-    
-    print("任务特性特征处理完成")
-    return df
-
-
-def process_efficiency_metrics(df):
-    """处理CPU和内存效率指标"""
-    print("\n处理效率指标特征...")
-    
-    efficiency_features = ['cycles_per_instruction', 'memory_accesses_per_instruction',
-                          'assigned_memory', 'page_cache_memory']
-    efficiency_features = [col for col in efficiency_features if col in df.columns]
-    
-    if efficiency_features:
-        print(f"发现效率指标特征: {efficiency_features}")
-        
-        # 检查这些特征的缺失情况
-        missing = df[efficiency_features].isnull().sum()
-        missing_pct = (missing / len(df)) * 100
-        
-        for col, miss, pct in zip(efficiency_features, missing, missing_pct):
-            print(f"{col}: {miss} 缺失值 ({pct:.2f}%)")
-            
-            # 如果缺失值不太多，使用中位数填充
-            if pct < 50:
-                median_val = df[col].median()
-                df[col] = df[col].fillna(median_val)
-                print(f"  - 使用中位数 {median_val:.6f} 填充缺失值")
-        
-        # 创建新的复合效率指标
-        if 'cycles_per_instruction' in df.columns and 'memory_accesses_per_instruction' in df.columns:
-            # 计算计算密集型指标 (高CPI, 低MAI意味着计算密集)
-            df['compute_intensity'] = df['cycles_per_instruction'] / (df['memory_accesses_per_instruction'] + 0.001)
-            print("已创建计算密集型指标")
-            
-        if 'assigned_memory' in df.columns and 'page_cache_memory' in df.columns:
-            # 计算缓存使用比例
-            df['cache_ratio'] = df['page_cache_memory'] / (df['assigned_memory'] + 0.0001)
-            print("已创建缓存使用比例")
-    else:
-        print("未找到效率指标特征")
-    
-    print("效率指标特征处理完成")
-    return df
-
-
 def prepare_data_for_modeling(df, target_vars):
     """准备模型训练数据"""
     print("\n准备模型训练数据...")
@@ -404,9 +302,6 @@ def main():
     df = create_time_features(df)
     df = create_lag_features(df, target_vars)
     df = create_rolling_features(df, target_vars)
-    df = create_utilization_features(df)
-    df = process_task_features(df)
-    df = process_efficiency_metrics(df)
     
     # 5. 准备建模数据
     df = prepare_data_for_modeling(df, target_vars)
