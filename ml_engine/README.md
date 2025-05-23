@@ -7,7 +7,7 @@ This directory contains the machine learning models and pipelines for predicting
 The ML Engine consists of the following structure:
 
 ```
-├── data/               # [Cluster 7 of raw input data](https://www.kaggle.com/datasets/derrickmwiti/google-2019-cluster-sample/data)
+├── data/               # Cluster 7 of raw input data
 ├── docs/               # Documentation of raw data
 ├── models/             # Trained model artifacts
 ├── preprocessing/      # Data cleaning and feature engineering
@@ -16,6 +16,8 @@ The ML Engine consists of the following structure:
 ├── prediction_results/ # Prediction outputs and visualizations
 └── training/           # Model training and evaluation
 ```
+
+[Full raw input data](https://www.kaggle.com/datasets/derrickmwiti/google-2019-cluster-sample/data) is available on Kaggle.
 
 ## Load Prediction
 
