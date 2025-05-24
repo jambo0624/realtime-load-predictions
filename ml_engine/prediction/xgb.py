@@ -24,11 +24,11 @@ plt.style.use('ggplot')
 def load_model(target_var, model_dir='../models'):
     """Load model and scaler from file"""
     if 'memory' in target_var.lower():
-        model_path = os.path.join(model_dir, 'rf_memory_model.pkl')
-        scaler_path = os.path.join(model_dir, 'rf_memory_scaler.pkl')
+        model_path = os.path.join(model_dir, 'xgb_memory_model.pkl')
+        scaler_path = os.path.join(model_dir, 'xgb_memory_scaler.pkl')
     elif 'cpu' in target_var.lower():
-        model_path = os.path.join(model_dir, 'rf_cpu_model.pkl')
-        scaler_path = os.path.join(model_dir, 'rf_cpu_scaler.pkl')
+        model_path = os.path.join(model_dir, 'xgb_cpu_model.pkl')
+        scaler_path = os.path.join(model_dir, 'xgb_cpu_scaler.pkl')
     else:
         print(f"Error: Unknown target variable '{target_var}'")
         return None, None
@@ -189,7 +189,7 @@ def visualize_predictions(df, target_var, max_points=1000, use_time=True):
     # Save image
     output_dir = '../prediction_results'
     os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, f"{target_var}_rf_predictions.png"))
+    #plt.savefig(os.path.join(output_dir, f"{target_var}_rf_predictions.png"))
     plt.show()
     
     # Calculate and display metrics
@@ -563,7 +563,7 @@ def visualize_future_predictions(historical_df, future_df, target_var, time_col=
     # Save image
     output_dir = '../prediction_results'
     os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, f"{target_var}_rf_future_predictions.png"))
+    #plt.savefig(os.path.join(output_dir, f"{target_var}_rf_future_predictions.png"))
     plt.show()
 
 def main():
@@ -573,7 +573,7 @@ def main():
         data_path = sys.argv[1]
     else:
         # Default data path
-        data_path = '../processed_data/processed_timeseries.csv'
+        data_path = '../processed_data/c7_user_DrrEIEW_timeseries.csv'
     
     print(f"Reading data file: {data_path}")
     
@@ -630,8 +630,8 @@ def main():
                     # Save predictions
                     output_dir = '../prediction_results'
                     os.makedirs(output_dir, exist_ok=True)
-                    future_df.to_csv(os.path.join(output_dir, f"{target_var}_rf_future_predictions.csv"), index=False)
-                    print(f"Future predictions saved to {output_dir}/{target_var}_rf_future_predictions.csv")
+                    future_df.to_csv(os.path.join(output_dir, f"{target_var}_xgb_future_predictions.csv"), index=False)
+                    print(f"Future predictions saved to {output_dir}/{target_var}_xgb_future_predictions.csv")
             else:
                 print("Error: Time column 'time_dt' not found, cannot make future predictions")
     
