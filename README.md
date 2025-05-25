@@ -67,6 +67,8 @@ cp .env.example .env
 ```bash
 cd ../frontend
 pnpm install
+cp .env.example .env
+# Edit the .env file with your server address
 ```
 
 ### Running the Application

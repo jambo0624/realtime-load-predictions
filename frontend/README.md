@@ -27,7 +27,7 @@ React-based frontend for visualizing CPU and memory load time series predictions
 pnpm install
 ```
 
-3. Configure environment (optional)
+3. Configure environment
 Create a `.env` file in the root directory to customize settings:
 ```
 REACT_APP_API_URL=http://localhost:3000/api/data
