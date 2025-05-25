@@ -630,8 +630,8 @@ def main():
                     # Save predictions
                     output_dir = '../prediction_results'
                     os.makedirs(output_dir, exist_ok=True)
-                    future_df.to_csv(os.path.join(output_dir, f"{target_var}_xgb_future_predictions.csv"), index=False)
-                    print(f"Future predictions saved to {output_dir}/{target_var}_xgb_future_predictions.csv")
+                    future_df.to_csv(os.path.join(output_dir, f"{target_var}-xgb-future_predictions.csv"), index=False)
+                    print(f"Future predictions saved to {output_dir}/{target_var}-xgb-future_predictions.csv")
             else:
                 print("Error: Time column 'time_dt' not found, cannot make future predictions")
     
