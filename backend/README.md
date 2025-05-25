@@ -1,55 +1,104 @@
-# Backend for Real-time Load Prediction
+# Real-time Load Predictions Backend
 
-This directory will contain the server-side components and services for the real-time load prediction system.
+Node.js/Express backend service for managing CPU and memory load time series prediction data.
 
-## Planned Features
+## Features
 
-- RESTful API for model predictions and data access
-- Data ingestion and processing pipelines
-- Authentication and authorization services
-- Model serving infrastructure
-- Real-time monitoring and alerting
-- Scheduled prediction jobs
-- Data storage and management
+- Import historical data from CSV files
+- Call Python XGBoost model to generate prediction data
+- Push prediction results in real-time using WebSocket
+- Provide data query interface via REST API
+- Store historical data and prediction results in PostgreSQL database
 
-## Technology Stack (Planned)
+## Tech Stack
 
-- FastAPI or Flask for API development
-- SQLAlchemy for database ORM
-- PostgreSQL for relational data storage
-- Redis for caching and messaging
-- Celery for task queue and scheduled jobs
-- Docker for containerization
-- Kubernetes for orchestration (optional)
-- Prometheus and Grafana for monitoring
+- **Node.js**: Runtime environment
+- **Express**: Web framework
+- **PostgreSQL**: Database
+- **Socket.io**: WebSocket support
+- **Python**: Machine learning prediction model
 
-## Structure (Future)
+## Installation
 
-The backend will be organized using a service-oriented architecture:
+1. Ensure Node.js, pnpm and PostgreSQL are installed
+
+2. Install dependencies
+```bash
+pnpm install
+```
+
+3. Create PostgreSQL database
+```sql
+CREATE DATABASE load_predictions;
+```
+
+4. Configure environment variables
+```bash
+cp .env.example .env
+# Edit the .env file to set database connection information
+```
+
+## Usage
+
+### Start the server
+```bash
+# Development mode
+pnpm dev
+
+# Production mode
+pnpm start
+```
+
+### API Endpoints
+
+- **Import data**: `POST /api/data/import`
+- **Get historical data**: `GET /api/data/historical?target=cpu&limit=100`
+- **Get prediction data**: `GET /api/data/predictions?target=cpu&limit=24`
+- **Get combined data**: `GET /api/data/combined?target=cpu&historyLimit=100&predictionLimit=24`
+- **Run prediction**: `POST /api/data/predict` (body: `{ "dataFile": "your_data_file.csv" }`)
+
+### WebSocket Connection
+
+Client connection example:
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3000');
+
+// Subscribe to specific data type updates
+socket.emit('subscribe', 'cpu');
+
+// Receive initial data
+socket.on('initialData', (data) => {
+  console.log('Initial data:', data);
+});
+
+// Receive real-time updates
+socket.on('dataUpdate', (data) => {
+  console.log('Data update:', data);
+});
+```
+
+## File Structure
 
 ```
 backend/
-├── api/                 # API endpoints and routes
-├── services/            # Business logic and services
-├── models/              # Data models and schemas
-├── db/                  # Database connections and migrations
-├── utils/               # Helper functions and utilities
-├── tasks/               # Background and scheduled tasks
-├── middleware/          # Request processing middleware
-├── config/              # Configuration management
-└── tests/               # Test suites
+  ├── src/
+  │   ├── controllers/    # API route controllers
+  │   ├── models/         # Data models
+  │   ├── routes/         # API route definitions
+  │   ├── services/       # Business logic
+  │   ├── utils/          # Utility functions
+  │   ├── config/         # Configuration
+  │   └── index.js        # Application entry point
+  ├── logs/               # Log files
+  ├── .env                # Environment variables
+  └── package.json        # Project configuration
 ```
 
-## Integration with ML Engine
+## Data Flow
 
-The backend will integrate with the ML Engine by:
-
-1. Loading trained models from the ML Engine's model repositories
-2. Exposing prediction endpoints that use these models
-3. Providing data access services for training and evaluation
-4. Managing model versioning and deployment
-5. Monitoring model performance in production
-
-## Development (Future)
-
-Instructions for setting up the development environment, running the services, and deploying to production will be provided here once development begins. 
+1. CSV data is imported into PostgreSQL database
+2. Python XGBoost model is called to generate predictions
+3. Prediction results are saved to the database
+4. Data is provided to the frontend via REST API or WebSocket 
