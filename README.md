@@ -16,7 +16,7 @@ This project integrates machine learning models with a web application to predic
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │                 │    │                  │    │                 │
 │  ML Engine      │◄───┤  Backend API     │◄───┤  Frontend       │
-│  (Python/XGBoost)│    │  (Node.js/Express)│    │  (React)        │
+│ (Python/XGBoost)│    │ (Node.js/Express)│    │  (React)        │
 │                 │───►│                  │───►│                 │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
         │                       │                       │
