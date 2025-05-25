@@ -1,43 +1,84 @@
-# Frontend for Real-time Load Prediction
+# Real-time Load Predictions Frontend
 
-This directory will contain the user interface components for the real-time load prediction system.
+React-based frontend for visualizing CPU and memory load time series predictions in real-time.
 
-## Planned Features
+## Features
 
-- Interactive dashboards for visualizing resource usage patterns
-- Historical data exploration tools
-- Prediction visualization with confidence intervals
-- Alert configuration interface
-- User management and authentication UI
-- Settings and system configuration panels
+- Visualize historical and predicted CPU/memory usage data
+- Real-time updates via WebSocket connection
+- Interactive dashboard with control panel
+- Trigger data imports and predictions from the UI
+- Responsive design for desktop and mobile
 
-## Technology Stack (Planned)
+## Tech Stack
 
-- React.js for component-based UI development
-- D3.js or Chart.js for data visualization
-- Material UI or Ant Design for component library
-- Redux or Context API for state management
-- Axios for API communication with backend services
+- **React**: UI library
+- **React Router**: Navigation
+- **Chart.js**: Data visualization
+- **Socket.io Client**: Real-time WebSocket connection
+- **Axios**: HTTP requests
 
-## Structure (Future)
+## Installation
 
-The frontend will be organized using a feature-based architecture:
+1. Ensure Node.js and pnpm are installed
+
+2. Install dependencies
+```bash
+pnpm install
+```
+
+3. Configure environment (optional)
+Create a `.env` file in the root directory to customize settings:
+```
+REACT_APP_API_URL=http://localhost:3000/api/data
+REACT_APP_SOCKET_URL=http://localhost:3000
+```
+
+## Usage
+
+### Start Development Server
+```bash
+pnpm start
+```
+
+### Build for Production
+```bash
+pnpm build
+```
+
+## File Structure
 
 ```
 frontend/
-├── public/              # Static assets
-├── src/
-│   ├── components/      # Reusable UI components
-│   ├── pages/           # Main application pages
-│   ├── services/        # API and data services
-│   ├── utils/           # Helper functions
-│   ├── hooks/           # Custom React hooks
-│   ├── context/         # Context providers
-│   └── assets/          # Images, icons, and other assets
-├── config/              # Configuration files
-└── tests/               # Test suites
+  ├── public/            # Static files
+  ├── src/
+  │   ├── api/           # API and WebSocket services
+  │   ├── components/    # React components
+  │   ├── context/       # React context providers
+  │   ├── hooks/         # Custom React hooks
+  │   ├── pages/         # Page components
+  │   ├── utils/         # Utility functions
+  │   ├── App.js         # Main app component
+  │   └── index.js       # Application entry point
+  └── package.json       # Project configuration
 ```
 
-## Development (Future)
+## Using the Dashboard
 
-Instructions for setting up the development environment, running the application, and building for production will be provided here once development begins. 
+1. The dashboard connects to the backend automatically on load
+2. Choose between CPU and Memory usage data views
+3. Use the control panel to:
+   - Run predictions on specific data files
+   - Import CSV data files
+   - Refresh data manually
+4. The chart displays:
+   - Historical data (blue line)
+   - Predictions (red dashed line)
+
+## Integration with Backend
+
+The frontend communicates with the backend via:
+1. RESTful API for data fetching and triggering actions
+2. WebSocket connection for real-time updates
+
+Make sure the backend is running before starting the frontend. 
