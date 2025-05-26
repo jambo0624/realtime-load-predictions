@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import useData from '../hooks/useData';
+import { useNotification } from '../context/NotificationContext';
 
 /**
  * Control panel component for managing predictions
@@ -12,30 +13,27 @@ const ControlPanel = () => {
     refreshData 
   } = useData();
   
+  const { showSuccess, showError } = useNotification();
   const [dataFile, setDataFile] = useState('c7_user_DrrEIEW_timeseries.csv');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
   
   /**
    * Run prediction with specified data file
    */
   const handleRunPrediction = async () => {
     if (!dataFile) {
-      setError('Please enter a data file name');
+      showError('Please enter a data file name');
       return;
     }
     
     setLoading(true);
-    setError(null);
-    setResult(null);
     
     try {
-      const response = await runPrediction(dataFile);
-      setResult(response);
+      await runPrediction(dataFile);
+      showSuccess('Prediction completed successfully');
       refreshData(); // Refresh data after prediction
     } catch (err) {
-      setError(err.message || 'Error running prediction');
+      showError(err.message || 'Error running prediction');
     } finally {
       setLoading(false);
     }
@@ -46,15 +44,13 @@ const ControlPanel = () => {
    */
   const handleImportData = async () => {
     setLoading(true);
-    setError(null);
-    setResult(null);
     
     try {
       const response = await importData();
-      setResult(response);
+      showSuccess(`Imported data successfully: ${response.message}`);
       refreshData(); // Refresh data after import
     } catch (err) {
-      setError(err.message || 'Error importing data');
+      showError(err.message || 'Error importing data');
     } finally {
       setLoading(false);
     }
@@ -108,20 +104,6 @@ const ControlPanel = () => {
           </button>
         </div>
       </div>
-      
-      {error && (
-        <div className="error-message">
-          <h3>Error</h3>
-          <p>{error}</p>
-        </div>
-      )}
-      
-      {result && (
-        <div className="result-message">
-          <h3>Result</h3>
-          <pre>{JSON.stringify(result, null, 2)}</pre>
-        </div>
-      )}
       
       <style jsx>{`
         .control-panel {
@@ -180,27 +162,6 @@ const ControlPanel = () => {
         button:disabled {
           background-color: #cccccc;
           cursor: not-allowed;
-        }
-        
-        .error-message {
-          margin-top: 15px;
-          padding: 10px;
-          background-color: #ffebee;
-          border-left: 4px solid #f44336;
-        }
-        
-        .result-message {
-          margin-top: 15px;
-          padding: 10px;
-          background-color: #e8f5e9;
-          border-left: 4px solid #4caf50;
-          max-height: 200px;
-          overflow: auto;
-        }
-        
-        pre {
-          white-space: pre-wrap;
-          font-size: 12px;
         }
       `}</style>
     </div>
