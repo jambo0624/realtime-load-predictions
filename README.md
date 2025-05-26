@@ -59,7 +59,7 @@ The ML engine generates predictions for both CPU and memory usage using XGBoost 
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/realtime-load-predictions.git
+git clone https://github.com/jambo0624/realtime-load-predictions.git
 cd realtime-load-predictions
 ```
 
