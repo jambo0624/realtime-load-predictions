@@ -10,6 +10,14 @@ This project integrates machine learning models with a web application to predic
 2. **Backend**: Node.js/Express API with PostgreSQL database
 3. **Frontend**: React-based dashboard with real-time visualizations
 
+## ML Engine Predictions
+
+![CPU Usage Predictions](ml_engine/prediction_results/average_usage_cpu-xgb-future_predictions.png)
+![Memory Usage Predictions](ml_engine/prediction_results/average_usage_memory-xgb-future_predictions.png)
+
+The ML engine generates predictions for both CPU and memory usage using XGBoost models trained on historical data. 
+
+
 ## Architecture
 
 ```
