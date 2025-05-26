@@ -65,37 +65,6 @@ const Dashboard = () => {
         )}
       </div>
       
-      <div className="data-stats">
-        <div className="stats-box">
-          <h3>Historical Data Points</h3>
-          <p className="stat-value">
-            {activeTarget === 'cpu' 
-              ? cpuData.historical.length 
-              : memoryData.historical.length}
-          </p>
-        </div>
-        
-        <div className="stats-box">
-          <h3>Prediction Data Points</h3>
-          <p className="stat-value">
-            {activeTarget === 'cpu' 
-              ? cpuData.predictions.length 
-              : memoryData.predictions.length}
-          </p>
-        </div>
-        
-        <div className="stats-box">
-          <h3>Current Usage</h3>
-          <p className="stat-value">
-            {activeTarget === 'cpu' && cpuData.historical.length > 0
-              ? `${parseFloat(cpuData.historical[cpuData.historical.length - 1].average_usage_cpu).toFixed(2)}%`
-              : activeTarget === 'memory' && memoryData.historical.length > 0
-                ? `${parseFloat(memoryData.historical[memoryData.historical.length - 1].average_usage_memory).toFixed(2)}%`
-                : 'N/A'}
-          </p>
-        </div>
-      </div>
-      
       <style jsx>{`
         .dashboard {
           max-width: 1200px;
@@ -141,33 +110,6 @@ const Dashboard = () => {
           color: #f44336;
         }
         
-        .data-stats {
-          display: flex;
-          gap: 20px;
-          margin-top: 20px;
-        }
-        
-        .stats-box {
-          flex: 1;
-          background-color: white;
-          border-radius: 4px;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-          padding: 15px;
-          text-align: center;
-        }
-        
-        .stats-box h3 {
-          margin-top: 0;
-          font-size: 16px;
-          color: #666;
-        }
-        
-        .stat-value {
-          font-size: 24px;
-          font-weight: bold;
-          margin: 10px 0 0;
-          color: #333;
-        }
       `}</style>
     </div>
   );
