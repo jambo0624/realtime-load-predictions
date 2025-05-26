@@ -93,6 +93,46 @@ class DataController {
   }
   
   /**
+   * Get both CPU and memory data together
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async getAllDataAndPredictions(req, res) {
+    try {
+      const { historyLimit = 100, predictionLimit = 24 } = req.query;
+      
+      // Get CPU data
+      const cpuResult = await predictionService.getDataAndPredictions(
+        'cpu', 
+        parseInt(historyLimit), 
+        parseInt(predictionLimit)
+      );
+      
+      // Get memory data
+      const memoryResult = await predictionService.getDataAndPredictions(
+        'memory', 
+        parseInt(historyLimit), 
+        parseInt(predictionLimit)
+      );
+      
+      res.status(200).json({
+        status: 'success',
+        data: {
+          cpu: cpuResult,
+          memory: memoryResult
+        }
+      });
+    } catch (err) {
+      logger.error('Error fetching all data and predictions:', err);
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to fetch all data and predictions',
+        error: err.message
+      });
+    }
+  }
+  
+  /**
    * Run prediction for a specific data file
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object

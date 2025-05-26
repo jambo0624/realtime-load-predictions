@@ -24,7 +24,6 @@ export const DataProvider = ({ children }) => {
     error: null
   });
   
-  const [activeTarget, setActiveTarget] = useState('cpu');
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [notifications, setNotifications] = useState([]);
 
@@ -71,20 +70,21 @@ export const DataProvider = ({ children }) => {
       setCpuData(prev => ({ ...prev, isLoading: true, error: null }));
       setMemoryData(prev => ({ ...prev, isLoading: true, error: null }));
       
-      // Load CPU data
-      const cpuResponse = await apiService.getCombinedData('cpu', 100, 24);
+      // Load both CPU and memory data in one request
+      const response = await apiService.getAllCombinedData(100, 24);
+      
+      // Update CPU data
       setCpuData({
-        historical: cpuResponse.data.historical || [],
-        predictions: cpuResponse.data.predictions || [],
+        historical: response.data.cpu.historical || [],
+        predictions: response.data.cpu.predictions || [],
         isLoading: false,
         error: null
       });
       
-      // Load memory data
-      const memoryResponse = await apiService.getCombinedData('memory', 100, 24);
+      // Update memory data
       setMemoryData({
-        historical: memoryResponse.data.historical || [],
-        predictions: memoryResponse.data.predictions || [],
+        historical: response.data.memory.historical || [],
+        predictions: response.data.memory.predictions || [],
         isLoading: false,
         error: null
       });
@@ -206,8 +206,6 @@ export const DataProvider = ({ children }) => {
   const contextValue = {
     cpuData,
     memoryData,
-    activeTarget,
-    setActiveTarget,
     connectionStatus,
     notifications,
     runPrediction,

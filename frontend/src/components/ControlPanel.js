@@ -6,8 +6,6 @@ import useData from '../hooks/useData';
  */
 const ControlPanel = () => {
   const { 
-    activeTarget, 
-    setActiveTarget, 
     connectionStatus, 
     runPrediction, 
     importData, 
@@ -70,19 +68,6 @@ const ControlPanel = () => {
         <div className="connection-status">
           WebSocket: <span className={connectionStatus}>{connectionStatus}</span>
         </div>
-      </div>
-      
-      <div className="data-selection">
-        <label>
-          Data View:
-          <select 
-            value={activeTarget} 
-            onChange={(e) => setActiveTarget(e.target.value)}
-          >
-            <option value="cpu">CPU Usage</option>
-            <option value="memory">Memory Usage</option>
-          </select>
-        </label>
       </div>
       
       <div className="prediction-controls">
@@ -158,15 +143,6 @@ const ControlPanel = () => {
         .connection-status .disconnected {
           color: red;
           font-weight: bold;
-        }
-        
-        .data-selection {
-          margin-bottom: 15px;
-        }
-        
-        select {
-          margin-left: 10px;
-          padding: 5px;
         }
         
         .prediction-controls {

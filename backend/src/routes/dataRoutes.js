@@ -9,6 +9,7 @@ router.post('/import', dataController.importData);
 // Data retrieval routes
 router.get('/historical', dataController.getHistoricalData);
 router.get('/combined', dataController.getDataAndPredictions);
+router.get('/all-combined', dataController.getAllDataAndPredictions);
 router.get('/predictions', dataController.getLatestPredictions);
 
 // Prediction routes

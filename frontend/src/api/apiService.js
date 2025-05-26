@@ -62,6 +62,24 @@ class ApiService {
   }
 
   /**
+   * Get both CPU and memory data combined
+   * @param {number} historyLimit - Number of historical records
+   * @param {number} predictionLimit - Number of prediction records
+   * @returns {Promise} - Promise with both CPU and memory data
+   */
+  async getAllCombinedData(historyLimit = 100, predictionLimit = 24) {
+    try {
+      const response = await axios.get(`${API_URL}/all-combined`, {
+        params: { historyLimit, predictionLimit }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching all combined data:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Run a prediction on a specific data file
    * @param {string} dataFile - Name of the data file
    * @returns {Promise} - Promise with result

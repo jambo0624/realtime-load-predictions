@@ -9,17 +9,16 @@ import useData from '../hooks/useData';
 const Dashboard = () => {
   const { 
     cpuData, 
-    memoryData, 
-    activeTarget,
+    memoryData
   } = useData();
   
-  // Display loading state if data isn't ready
-  const isLoading = (activeTarget === 'cpu' && cpuData.isLoading) || 
-                   (activeTarget === 'memory' && memoryData.isLoading);
+  // Check loading states
+  const cpuIsLoading = cpuData.isLoading;
+  const memoryIsLoading = memoryData.isLoading;
   
-  // Display error if there is one
-  const error = (activeTarget === 'cpu' && cpuData.error) || 
-               (activeTarget === 'memory' && memoryData.error);
+  // Check for errors
+  const cpuError = cpuData.error;
+  const memoryError = memoryData.error;
   
   return (
     <div className="dashboard">
@@ -30,39 +29,58 @@ const Dashboard = () => {
       
       <ControlPanel />
       
-      <div className="chart-container">
-        <h2>{activeTarget === 'cpu' ? 'CPU' : 'Memory'} Usage Chart</h2>
+      <div className="charts-container">
+        <div className="chart-container">
+          <h2>CPU Usage Chart</h2>
+          
+          {cpuIsLoading && (
+            <div className="loading-message">
+              <p>Loading data...</p>
+            </div>
+          )}
+          
+          {cpuError && (
+            <div className="error-message">
+              <h3>Error Loading Data</h3>
+              <p>{cpuError}</p>
+            </div>
+          )}
+          
+          {!cpuIsLoading && !cpuError && (
+            <LoadChart 
+              historicalData={cpuData.historical} 
+              predictionData={cpuData.predictions} 
+              target="cpu"
+              height={350}
+            />
+          )}
+        </div>
         
-        {isLoading && (
-          <div className="loading-message">
-            <p>Loading data...</p>
-          </div>
-        )}
-        
-        {error && (
-          <div className="error-message">
-            <h3>Error Loading Data</h3>
-            <p>{error}</p>
-          </div>
-        )}
-        
-        {!isLoading && !error && activeTarget === 'cpu' && (
-          <LoadChart 
-            historicalData={cpuData.historical} 
-            predictionData={cpuData.predictions} 
-            target="cpu"
-            height={400}
-          />
-        )}
-        
-        {!isLoading && !error && activeTarget === 'memory' && (
-          <LoadChart 
-            historicalData={memoryData.historical} 
-            predictionData={memoryData.predictions} 
-            target="memory"
-            height={400}
-          />
-        )}
+        <div className="chart-container">
+          <h2>Memory Usage Chart</h2>
+          
+          {memoryIsLoading && (
+            <div className="loading-message">
+              <p>Loading data...</p>
+            </div>
+          )}
+          
+          {memoryError && (
+            <div className="error-message">
+              <h3>Error Loading Data</h3>
+              <p>{memoryError}</p>
+            </div>
+          )}
+          
+          {!memoryIsLoading && !memoryError && (
+            <LoadChart 
+              historicalData={memoryData.historical} 
+              predictionData={memoryData.predictions} 
+              target="memory"
+              height={350}
+            />
+          )}
+        </div>
       </div>
       
       <style jsx>{`
@@ -85,6 +103,18 @@ const Dashboard = () => {
         
         .dashboard-header p {
           color: #666;
+        }
+        
+        .charts-container {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        
+        @media (min-width: 992px) {
+          .charts-container {
+            flex-direction: column;
+          }
         }
         
         .chart-container {
