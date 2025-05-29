@@ -89,7 +89,8 @@ def make_predictions(model, scaler, df, target_var, target_vars=None):
         extra_features = [col for col in df_copy.columns 
                          if col not in expected_features 
                          and col != target_var 
-                         and not col.startswith('time_')]
+                         and not col.startswith('time_')
+                         and col != 'user' and col != 'user_id' and not col.startswith('user_')]
         
         if extra_features:
             print(f"Warning: Removing {len(extra_features)} extra features not seen during training:")
@@ -106,7 +107,10 @@ def make_predictions(model, scaler, df, target_var, target_vars=None):
     else:
         print("Warning: Scaler does not have feature_names_in_ attribute. Using all non-target columns as features.")
         # Remove time columns, target columns and any string/object columns
-        X = df_copy.drop(columns=[col for col in df_copy.columns if col in target_vars or col.startswith('time_')])
+        X = df_copy.drop(columns=[col for col in df_copy.columns 
+                                if col in target_vars 
+                                or col.startswith('time_')
+                                or col == 'user' or col == 'user_id' or col.startswith('user_')])
         
     # Ensure all data is numeric before scaling
     # Check for any remaining non-numeric columns (like datetime or string columns)
@@ -152,7 +156,7 @@ def make_predictions(model, scaler, df, target_var, target_vars=None):
     print(f"Generated {len(predictions)} predictions")
     return df_with_preds, predictions
 
-def visualize_predictions(df, target_var, max_points=1000, use_time=True):
+def visualize_predictions(df, target_var, user_id, max_points=1000, use_time=True):
     """Visualize actual vs predicted values"""
     prediction_col = f'{target_var}_predicted'
     
@@ -189,7 +193,7 @@ def visualize_predictions(df, target_var, max_points=1000, use_time=True):
     # Save image
     output_dir = '../prediction_results'
     os.makedirs(output_dir, exist_ok=True)
-    #plt.savefig(os.path.join(output_dir, f"{target_var}_rf_predictions.png"))
+    #plt.savefig(os.path.join(output_dir, f"{target_var}-rf-{user_id}-predictions.png"))
     plt.show()
     
     # Calculate and display metrics
@@ -341,6 +345,13 @@ def predict_future_values(model, scaler, historical_df, future_periods=24, targe
     # Create time features for future dataframe
     future_df = create_time_features(future_df, time_col)
     
+    # Copy user information if it exists in the historical data
+    user_columns = [col for col in working_df.columns if col == 'user' or col == 'user_id' or col.startswith('user_')]
+    if user_columns:
+        # Get the most recent user info (in case it changes over time)
+        for col in user_columns:
+            future_df[col] = working_df[col].iloc[-1]
+    
     # Get the most recent data point as the starting point
     last_data = working_df.iloc[-1:].copy()
     
@@ -465,7 +476,9 @@ def predict_future_values(model, scaler, historical_df, future_periods=24, targe
         else:
             # If no expected_features, drop time and target columns
             X = future_data.drop(columns=[col for col in future_data.columns 
-                                        if col.startswith('time_') or col == target_var])
+                                        if col.startswith('time_') 
+                                        or col == target_var
+                                        or col == 'user' or col == 'user_id' or col.startswith('user_')])
         
         # Ensure all data is numeric before scaling
         # Check for any remaining non-numeric columns (like datetime or string columns)
@@ -540,7 +553,7 @@ def predict_future_values(model, scaler, historical_df, future_periods=24, targe
     
     return predictions_df, all_predictions
 
-def visualize_future_predictions(historical_df, future_df, target_var, time_col='time_dt'):
+def visualize_future_predictions(historical_df, future_df, target_var, user_id, time_col='time_dt'):
     """Visualize historical data and future predictions"""
     plt.figure(figsize=(15, 6))
     
@@ -563,8 +576,31 @@ def visualize_future_predictions(historical_df, future_df, target_var, time_col=
     # Save image
     output_dir = '../prediction_results'
     os.makedirs(output_dir, exist_ok=True)
-    #plt.savefig(os.path.join(output_dir, f"{target_var}_rf_future_predictions.png"))
+    plt.savefig(os.path.join(output_dir, f"{target_var}-rf-{user_id}-future_predictions.png"))
     plt.show()
+
+def clean_user_id(user_id):
+    # Define set of valid characters for filenames
+    valid_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+    
+    # Keep only valid characters
+    clean_chars = [c for c in user_id if c in valid_chars]
+    
+    # Take first 7 valid characters (if any)
+    short_id = ''.join(clean_chars[:7])
+    
+    # If no valid characters, use "user" as default
+    if not short_id:
+        short_id = "user"
+    
+    ## Add last 4 digits of hash to ensure uniqueness (avoid duplicates after truncation)
+    #if len(user_id) > 4:
+    #    suffix = user_id[-4:]
+    #else:
+    #    import hashlib
+    #    suffix = hashlib.md5(user_id.encode()).hexdigest()[:4]
+    
+    return f"{short_id}"
 
 def main():
     """Main function to demonstrate the prediction workflow"""
@@ -581,6 +617,18 @@ def main():
         # Read data
         df = pd.read_csv(data_path)
         print(f"Successfully read data, shape: {df.shape}")
+        
+        # Check if user information exists
+        user_columns = [col for col in df.columns if col == 'user' or col == 'user_id' or col.startswith('user_')]
+        if user_columns:
+            print(f"Found user information columns: {', '.join(user_columns)}")
+            # Check for unique user values
+            for col in user_columns:
+                unique_values = df[col].unique()
+                if len(unique_values) == 1:
+                    print(f"  {col}: {unique_values[0]}")
+                else:
+                    print(f"  {col}: {len(unique_values)} unique values")
         
         # Check if target variables exist
         target_vars = ['average_usage_cpu', 'average_usage_memory']
@@ -607,7 +655,7 @@ def main():
             df_with_preds, _ = make_predictions(model, scaler, df_clean, target_var)
             
             # Visualize predictions
-            visualize_predictions(df_with_preds, target_var)
+            visualize_predictions(df_with_preds, target_var, clean_user_id(df_clean['user'].iloc[0]))
             
             # 2. Make future predictions
             future_periods = 24  # Predict 24 time points ahead
@@ -625,13 +673,32 @@ def main():
                 
                 if future_df is not None:
                     # Visualize future predictions
-                    visualize_future_predictions(df_features, future_df, target_var)
+                    visualize_future_predictions(df_features, future_df, target_var, clean_user_id(future_df['user'].iloc[0]))
                     
                     # Save predictions
                     output_dir = '../prediction_results'
-                    os.makedirs(output_dir, exist_ok=True)
-                    future_df.to_csv(os.path.join(output_dir, f"{target_var}-rf-future_predictions.csv"), index=False)
-                    print(f"Future predictions saved to {output_dir}/{target_var}-rf-future_predictions.csv")
+                    
+                    # Add user ID to filename if available in the data
+                    if 'user' in future_df.columns:
+                        user_id = str(future_df['user'].iloc[0])
+                        output_filename = f"{target_var}-rf-user_{user_id}-future_predictions.csv"
+                    elif 'user_id' in future_df.columns:
+                        user_id = str(future_df['user_id'].iloc[0])
+                        output_filename = f"{target_var}-rf-user_{user_id}-future_predictions.csv"
+                    else:
+                        # Use filename to extract user if possible
+                        try:
+                            filename = os.path.basename(data_path)
+                            if 'user_' in filename:
+                                user_id = filename.split('user_')[1].split('_')[0]
+                                output_filename = f"{target_var}-rf-user_{user_id}-future_predictions.csv"
+                            else:
+                                output_filename = f"{target_var}-rf-future_predictions.csv"
+                        except:
+                            output_filename = f"{target_var}-rf-future_predictions.csv"
+                    
+                    future_df.to_csv(os.path.join(output_dir, output_filename), index=False)
+                    print(f"Future predictions saved to {output_dir}/{output_filename}")
             else:
                 print("Error: Time column 'time_dt' not found, cannot make future predictions")
     
