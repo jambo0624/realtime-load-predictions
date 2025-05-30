@@ -136,7 +136,7 @@ const ResourceManagement = ({ isUserSelected = false }) => {
                         <option value="us-central1">US Central (Iowa)</option>
                         <option value="us-east1">US East (South Carolina)</option>
                         <option value="europe-west1">Europe West (Belgium)</option>
-                        <option value="asia-east1">Asia East (Taiwan)</option>
+                        <option value="asia-east1">Asia East (China)</option>
                       </>
                     )}
                     
