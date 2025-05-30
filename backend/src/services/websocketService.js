@@ -92,8 +92,8 @@ class WebsocketService {
       }
       
       // Get CPU and memory data
-      const cpuData = await predictionService.getDataAndPredictions('cpu', 50, 24, userId);
-      const memoryData = await predictionService.getDataAndPredictions('memory', 50, 24, userId);
+      const cpuData = await predictionService.getDataAndPredictions('cpu', 50, 120, userId);
+      const memoryData = await predictionService.getDataAndPredictions('memory', 50, 120, userId);
       
       // Send combined data
       socket.emit('initialData', { 
@@ -147,8 +147,8 @@ class WebsocketService {
           }
           
           // Get CPU and memory data for this user
-          const cpuData = await predictionService.getDataAndPredictions('cpu', 50, 24, userId);
-          const memoryData = await predictionService.getDataAndPredictions('memory', 50, 24, userId);
+          const cpuData = await predictionService.getDataAndPredictions('cpu', 50, 120, userId);
+          const memoryData = await predictionService.getDataAndPredictions('memory', 50, 120, userId);
           
           // Send combined data update
           this.io.to(room).emit('dataUpdate', {

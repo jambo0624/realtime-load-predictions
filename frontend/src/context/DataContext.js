@@ -188,7 +188,7 @@ export const DataProvider = ({ children }) => {
       setMemoryData(prev => ({ ...prev, isLoading: true, error: null }));
       
       // Load both CPU and memory data in one request
-      const response = await apiService.getAllCombinedData(100, 24, currentUser.username);
+      const response = await apiService.getAllCombinedData(50, 120, currentUser.username);
       
       // Update CPU data
       setCpuData({

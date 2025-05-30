@@ -53,7 +53,7 @@ const LoadChart = ({ historicalData = [], predictionData = [], target = 'cpu', h
     const formatTime = (timestamp) => {
       if (!timestamp) return '';
       const date = new Date(timestamp);
-      return format(date, 'HH:mm:ss');
+      return format(date, 'HH:mm');
     };
     
     // Extract data points
@@ -76,7 +76,7 @@ const LoadChart = ({ historicalData = [], predictionData = [], target = 'cpu', h
           data: [...historicalValues, ...Array(predictionTimes.length).fill(null)],
           borderColor: 'rgba(75, 192, 192, 1)',
           backgroundColor: 'rgba(75, 192, 192, 0.2)',
-          pointRadius: 2,
+          pointRadius: 1,
           borderWidth: 2,
           fill: false,
           tension: 0.1
@@ -86,7 +86,7 @@ const LoadChart = ({ historicalData = [], predictionData = [], target = 'cpu', h
           data: [...Array(historicalTimes.length).fill(null), ...predictionValues],
           borderColor: 'rgba(255, 99, 132, 1)',
           backgroundColor: 'rgba(255, 99, 132, 0.2)',
-          pointRadius: 2,
+          pointRadius: 1,
           borderWidth: 2,
           borderDash: [5, 5],
           fill: false,

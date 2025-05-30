@@ -41,7 +41,7 @@ class ApiService {
    * @param {string} username - Optional username to filter data
    * @returns {Promise} - Promise with data
    */
-  async getHistoricalData(limit = 100, username = null) {
+  async getHistoricalData(limit = 50, username = null) {
     try {
       const params = { limit };
       if (username) params.username = username;
@@ -61,7 +61,7 @@ class ApiService {
    * @param {string} username - Optional username to filter data
    * @returns {Promise} - Promise with both CPU and memory data
    */
-  async getAllCombinedData(historyLimit = 100, predictionLimit = 24, username = null) {
+  async getAllCombinedData(historyLimit = 50, predictionLimit = 120, username = null) {
     try {
       const params = { historyLimit, predictionLimit };
       if (username) params.username = username;
