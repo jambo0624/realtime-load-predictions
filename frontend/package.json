@@ -15,7 +15,9 @@
     "react-router-dom": "^6.8.2",
     "react-scripts": "5.0.1",
     "socket.io-client": "^4.6.1",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "aws-sdk": "^2.1338.0",
+    "googleapis": "^118.0.0"
   },
   "scripts": {
     "start": "react-scripts start",

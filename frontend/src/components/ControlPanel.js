@@ -7,7 +7,7 @@ import UserSelect from './UserSelect';
  * Control panel component for managing predictions
  */
 const ControlPanel = ({ isUserSelected = false }) => {
-  const { 
+  const {
     connectionStatus, 
     runPrediction, 
     importData, 
@@ -89,59 +89,69 @@ const ControlPanel = ({ isUserSelected = false }) => {
     <div className="control-panel">
       <h2>Control Panel</h2>
       
-      <div className="panel-row">
-        <div className="status-indicator">
-          <div className="connection-status">
-            WebSocket: <span className={connectionStatus}>{connectionStatus}</span>
+      <div className="panel-section">
+        <div className="panel-header">
+          <div className="status-indicator">
+            <div className="connection-status">
+              WebSocket: <span className={connectionStatus}>{connectionStatus}</span>
+            </div>
           </div>
+          
+          <UserSelect />
         </div>
         
-        <UserSelect />
-      </div>
-      
-      <div className="prediction-controls">
-        <h3>Run Prediction</h3>
-        <div className="input-group">
-          <label>
-            Data File:
-            <input 
-              type="text" 
-              disabled={true}
-              value={dataFile} 
-              onChange={(e) => setDataFile(e.target.value)} 
-              placeholder="e.g., data.csv"
-            />
-          </label>
-        </div>
-        
-        <div className="button-group">
-          <button 
-            onClick={handleRunPrediction} 
-            disabled={loading || !isUserSelected}
-          >
-            {loading ? 'Running...' : 'Run Prediction'}
-          </button>
+        <div className="prediction-controls">
+          <h3>Run Prediction</h3>
+          <div className="input-row">
+            <label>
+              Data File:
+              <input 
+                type="text" 
+                disabled={true}
+                value={dataFile} 
+                onChange={(e) => setDataFile(e.target.value)} 
+                placeholder="e.g., data.csv"
+              />
+            </label>
+          </div>
           
-          <button 
-            onClick={handleImportSpecificFile} 
-            disabled={loading}
-          >
-            {loading ? 'Importing...' : 'Import File'}
-          </button>
-          
-          <button 
-            onClick={handleImportData} 
-            disabled={loading}
-          >
-            {loading ? 'Importing...' : 'Import All Files'}
-          </button>
-          
-          <button 
-            onClick={refreshData} 
-            disabled={loading || !isUserSelected}
-          >
-            Refresh Data
-          </button>
+          <div className="button-group">
+            <div className="button-row">
+              <button 
+                onClick={handleRunPrediction} 
+                disabled={loading || !isUserSelected}
+                className="btn-primary"
+              >
+                {loading ? 'Running...' : 'Run Prediction'}
+              </button>
+              
+              <button 
+                onClick={handleImportSpecificFile} 
+                disabled={loading}
+                className="btn-secondary"
+              >
+                {loading ? 'Importing...' : 'Import File'}
+              </button>
+            </div>
+            
+            <div className="button-row">
+              <button 
+                onClick={handleImportData} 
+                disabled={loading}
+                className="btn-secondary"
+              >
+                {loading ? 'Importing...' : 'Import All Files'}
+              </button>
+              
+              <button 
+                onClick={refreshData} 
+                disabled={loading || !isUserSelected}
+                className="btn-refresh"
+              >
+                Refresh Data
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -150,16 +160,37 @@ const ControlPanel = ({ isUserSelected = false }) => {
           background-color: #f5f5f5;
           border-radius: 4px;
           padding: 15px;
-          margin-bottom: 20px;
+          height: 100%;
         }
         
-        .panel-row {
+        h2 {
+          margin-top: 0;
+          margin-bottom: 15px;
+          font-size: 1.5rem;
+        }
+        
+        h3 {
+          margin-top: 0;
+          margin-bottom: 10px;
+          font-size: 1.2rem;
+        }
+        
+        .panel-section {
+          background-color: white;
+          border-radius: 4px;
+          border: 1px solid #ddd;
+          padding: 10px;
+        }
+        
+        .panel-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
+          margin-bottom: 15px;
         }
         
-        .status-indicator {
+        .connection-status {
+          font-size: 0.9rem;
         }
         
         .connection-status .connected {
@@ -173,40 +204,75 @@ const ControlPanel = ({ isUserSelected = false }) => {
         }
         
         .prediction-controls {
-          margin-top: 20px;
+          margin-top: 10px;
         }
         
-        .input-group {
-          margin-bottom: 15px;
+        .input-row {
+        }
+        
+        label {
+          display: block;
+          margin-bottom: 5px;
+          font-size: 0.9rem;
         }
         
         input {
-          margin-left: 10px;
-          padding: 5px;
-          width: 250px;
+          padding: 6px;
+          width: 100%;
+          border: 1px solid #ddd;
+          border-radius: 4px;
         }
         
         .button-group {
           display: flex;
-          gap: 10px;
+          flex-direction: column;
+          gap: 8px;
+        }
+        
+        .button-row {
+          display: flex;
+          gap: 8px;
         }
         
         button {
           padding: 8px 12px;
-          background-color: #4a90e2;
-          color: white;
           border: none;
           border-radius: 4px;
           cursor: pointer;
+          font-size: 0.9rem;
+          flex: 1;
+        }
+        
+        .btn-primary {
+          background-color: #4a90e2;
+          color: white;
+        }
+        
+        .btn-secondary {
+          background-color: #f0f0f0;
+          color: #333;
+          border: 1px solid #ddd;
+        }
+        
+        .btn-refresh {
+          background-color: #5cb85c;
+          color: white;
         }
         
         button:hover {
-          background-color: #357ab8;
+          opacity: 0.9;
         }
         
         button:disabled {
           background-color: #cccccc;
           cursor: not-allowed;
+          opacity: 0.7;
+        }
+        
+        @media (max-width: 768px) {
+          button {
+            flex: 1 1 100%;
+          }
         }
       `}</style>
     </div>

@@ -12,8 +12,8 @@ This project integrates machine learning models with a web application to predic
 
 ## ML Engine Predictions
 
-![CPU Usage Predictions](ml_engine/prediction_results/average_usage_cpu-xgb-future_predictions.png)
-![Memory Usage Predictions](ml_engine/prediction_results/average_usage_memory-xgb-future_predictions.png)
+![CPU Usage Predictions](ml_engine/prediction_results/average_usage_cpu-xgb-DrrEIEW-predictions.png)
+![Memory Usage Predictions](ml_engine/prediction_results/average_usage_memory-xgb-DrrEIEW-predictions.png)
 
 The ML engine generates predictions for both CPU and memory usage using XGBoost models trained on historical data. 
 

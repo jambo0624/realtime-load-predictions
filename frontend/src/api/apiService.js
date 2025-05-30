@@ -117,6 +117,50 @@ class ApiService {
       throw error;
     }
   }
+
+  /**
+   * Save cloud provider credentials
+   * @param {Object} credentials - Cloud provider credentials
+   * @returns {Promise} - Promise with result
+   */
+  async saveCloudCredentials(credentials) {
+    try {
+      const response = await axios.post(`${API_URL}/api/cloud/credentials`, credentials);
+      return response.data;
+    } catch (error) {
+      console.error('Error saving cloud credentials:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Apply resource scaling strategy
+   * @param {Object} strategyData - Resource strategy data
+   * @returns {Promise} - Promise with result
+   */
+  async applyResourceStrategy(strategyData) {
+    try {
+      const response = await axios.post(`${API_URL}/api/cloud/resource-strategy`, strategyData);
+      return response.data;
+    } catch (error) {
+      console.error('Error applying resource strategy:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get current resource allocation
+   * @returns {Promise} - Promise with result
+   */
+  async getResourceAllocation() {
+    try {
+      const response = await axios.get(`${API_URL}/api/cloud/resources`);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting resource allocation:', error);
+      throw error;
+    }
+  }
 }
 
 const apiService = new ApiService()

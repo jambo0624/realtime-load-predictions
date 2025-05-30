@@ -1,6 +1,8 @@
 import React, { useContext } from 'react';
 import LoadChart from '../components/LoadChart';
 import ControlPanel from '../components/ControlPanel';
+import Notifications from '../components/Notifications';
+import ResourceManagement from '../components/ResourceManagement';
 import useData from '../hooks/useData';
 import { UserContext } from '../context/UserContext';
 
@@ -31,7 +33,14 @@ const Dashboard = () => {
         <p>Visualizing CPU and Memory usage predictions</p>
       </div>
       
-      <ControlPanel isUserSelected={isUserSelected}/>
+      <div className="control-resource-container">
+        <div className="control-panel-wrapper">
+          <ControlPanel isUserSelected={isUserSelected}/>
+        </div>
+        <div className="resource-management-wrapper">
+          <ResourceManagement isUserSelected={isUserSelected} />
+        </div>
+      </div>
       
       <div className="charts-container">
         <div className="chart-container">
@@ -89,6 +98,8 @@ const Dashboard = () => {
         </div>
       </div>
       
+      <Notifications />
+      
       <style jsx>{`
         .dashboard {
           max-width: 1200px;
@@ -104,11 +115,29 @@ const Dashboard = () => {
         
         .dashboard-header h1 {
           color: #333;
-          margin-bottom: 10px;
+          margin-bottom: 0;
         }
         
         .dashboard-header p {
           color: #666;
+          margin: 0;
+        }
+        
+        .control-resource-container {
+          display: flex;
+          flex-direction: row;
+          gap: 20px;
+          margin-bottom: 20px;
+        }
+        
+        .control-panel-wrapper {
+          flex: 1;
+          min-width: 300px;
+        }
+        
+        .resource-management-wrapper {
+          flex: 2;
+          min-width: 600px;
         }
         
         .charts-container {
@@ -120,6 +149,20 @@ const Dashboard = () => {
         @media (min-width: 992px) {
           .charts-container {
             flex-direction: column;
+          }
+        }
+        
+        /* Change to vertical layout on smaller screens */
+        @media (max-width: 1100px) {
+          .control-resource-container {
+            flex-direction: column;
+          }
+          
+          .control-panel-wrapper,
+          .resource-management-wrapper {
+            flex: none;
+            width: 100%;
+            min-width: 0;
           }
         }
         
