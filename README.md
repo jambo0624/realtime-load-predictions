@@ -12,10 +12,32 @@ This project integrates machine learning models with a web application to predic
 
 ## ML Engine Predictions
 
+### Model Performance Summary
+
+#### CPU Usage Model Performance
+
+| Model | RMSE | MAE | R² |
+|-------|------|-----|-----|
+| XGBoost | 0.001949 | 0.000538 | 0.982413 |
+| Random Forest | 0.002020 | 0.000651 | 0.981096 |
+| LSTM | 0.015657 | 0.010862 | -0.135534 |
+| ARIMA | 0.019595 | 0.018319 | -0.778462 |
+
+#### Memory Usage Model Performance
+
+| Model | RMSE | MAE | R² |
+|-------|------|-----|-----|
+| XGBoost | 0.000861 | 0.000273 | 0.980629 |
+| Random Forest | 0.000874 | 0.000275 | 0.980047 |
+| LSTM | 0.006341 | 0.005278 | -0.050866 |
+| ARIMA | 0.006558 | 0.005606 | -0.123842 |
+
+### XGboost Model Prediction Results
+The ML engine generates predictions for both CPU and memory usage using XGBoost models trained on historical data. 
+
 ![CPU Usage Predictions](./ml_engine/prediction_results/average_usage_cpu-xgb-DrrEIEW-future_predictions.png)
 ![Memory Usage Predictions](./ml_engine/prediction_results/average_usage_memory-xgb-DrrEIEW-future_predictions.png)
 
-The ML engine generates predictions for both CPU and memory usage using XGBoost models trained on historical data. 
 
 
 ## Architecture
