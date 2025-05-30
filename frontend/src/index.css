@@ -91,4 +91,57 @@ select {
   button {
     margin-bottom: 10px;
   }
+}
+
+/* User select container */
+.user-select-container {
+  display: flex;
+  align-items: center;
+}
+
+.user-select-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-right: 10px;
+}
+
+.user-select-header h4 {
+  margin: 0;
+}
+
+.user-dropdown select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+/* Form styles for dropdown */
+.form-select {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #495057;
+  background-color: #fff;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+}
+
+/* Loader */
+.loader {
+  text-align: center;
+  padding: 20px;
+  font-style: italic;
+  color: #666;
+}
+
+/* No users message */
+.no-users {
+  text-align: center;
+  padding: 10px;
+  color: #666;
+  font-style: italic;
 } 

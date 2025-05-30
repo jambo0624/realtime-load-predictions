@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 const db = require('../utils/db');
 const config = require('../config/config');
 const importService = require('./importService');
+const userService = require('./userService');
 
 class PredictionService {
   /**
@@ -129,7 +130,8 @@ class PredictionService {
       const results = {
         imported: 0,
         failed: 0,
-        files: []
+        files: [],
+        userStats: {}
       };
       
       for (const file of files) {
@@ -139,21 +141,62 @@ class PredictionService {
           // Extract target variable from filename
           const targetVar = file.split('-')[0]; // e.g., "average_usage_cpu"
           
-          // Parse the CSV file
+          // Parse the CSV file and get users
           const data = await this.parsePredictionCsv(filePath, targetVar);
-          logger.info(`-------------------Importing prediction results from ${targetVar}`);
+          logger.info(`Importing ${data.length} prediction results from ${file}`);
           
-          // Import into the database
-          await this.savePredictionsToDB(data);
+          // Group data by user
+          const userGroups = new Map();
+          for (const record of data) {
+            // Use record.user if available, otherwise default to 'system'
+            const username = record.user || 'system';
+            
+            if (!userGroups.has(username)) {
+              userGroups.set(username, []);
+              
+              // Initialize user stats if not exists
+              if (!results.userStats[username]) {
+                results.userStats[username] = { imported: 0, failed: 0 };
+              }
+            }
+            
+            userGroups.get(username).push(record);
+          }
           
-          results.imported++;
+          // Process each user's data
+          for (const [username, userRecords] of userGroups.entries()) {
+            try {
+              // Get or create user
+              const user = await userService.getOrCreateUser(username);
+              
+              // Import data for this user
+              await this.savePredictionsToDB(userRecords, user.id);
+              
+              results.imported += userRecords.length;
+              if (results.userStats[username]) {
+                results.userStats[username].imported += userRecords.length;
+              } else {
+                results.userStats[username] = { imported: userRecords.length, failed: 0 };
+              }
+              
+              logger.info(`Successfully imported ${userRecords.length} predictions for user ${username}`);
+            } catch (userErr) {
+              logger.error(`Failed to import predictions for user ${username}:`, userErr);
+              results.failed += userRecords.length;
+              if (results.userStats[username]) {
+                results.userStats[username].failed += userRecords.length;
+              } else {
+                results.userStats[username] = { imported: 0, failed: userRecords.length };
+              }
+            }
+          }
+          
           results.files.push({
             file,
             status: 'success',
-            count: data.length
+            count: data.length,
+            userStats: Object.fromEntries(userGroups.entries().map(([username, records]) => [username, records.length]))
           });
-          
-          logger.info(`Successfully imported ${data.length} predictions from ${file}`);
         } catch (err) {
           logger.error(`Failed to import ${file}:`, err);
           results.failed++;
@@ -181,16 +224,24 @@ class PredictionService {
   async parsePredictionCsv(filePath, targetVar) {
     return new Promise((resolve, reject) => {
       const results = [];
+      console.log(`Parsing prediction CSV file: ${filePath}`);
       
       fs.createReadStream(filePath)
         .on('error', err => reject(err))
         .pipe(csv())
         .on('data', data => {
-          results.push({
+          const record = {
             time_dt: data.time_dt,
             [targetVar]: parseFloat(data[targetVar]),
-            prediction_type: 'xgboost'
-          });
+            prediction_type: filePath.includes('rf') ? 'rf' : 'xgboost'
+          };
+          
+          // Include user information if available
+          if (data.user) {
+            record.user = data.user;
+          }
+          
+          results.push(record);
         })
         .on('end', () => resolve(results))
         .on('error', err => reject(err));
@@ -198,82 +249,188 @@ class PredictionService {
   }
   
   /**
-   * Save prediction data to the database
+   * Save predictions to the database
    * @param {Array} predictions - Array of prediction objects
-   * @returns {Promise<void>}
+   * @param {number} userId - User ID for the predictions
    */
-  async savePredictionsToDB(predictions) {
-    return importService.batchInsert(predictions, 'predictions');
-  }
-  
-  /**
-   * Get the latest predictions from the database
-   * @param {string} target - Target variable (cpu or memory)
-   * @param {number} limit - Maximum number of records to return
-   * @returns {Promise<Array>} - Array of prediction records
-   */
-  async getLatestPredictions(target = 'cpu', limit = 24) {
-    const column = target.toLowerCase() === 'cpu' 
-      ? 'average_usage_cpu' 
-      : 'average_usage_memory';
+  async savePredictionsToDB(predictions, userId) {
+    const client = await db.pool.connect();
     
     try {
-      const { rows } = await db.query(
-        `SELECT time_dt, ${column}, prediction_type 
-         FROM predictions 
-         WHERE ${column} IS NOT NULL 
-         ORDER BY time_dt DESC 
-         LIMIT $1`,
-        [limit]
+      await client.query('BEGIN');
+      
+      // Identify target column and type
+      const targetColumn = Object.keys(predictions[0]).find(key => 
+        key !== 'time_dt' && key !== 'prediction_type' && key !== 'user');
+        
+      const targetType = targetColumn === 'average_usage_cpu' ? 'cpu' : 'memory';
+      
+      // Get min and max time from the predictions to define the range
+      const times = predictions.map(p => new Date(p.time_dt));
+      const minTime = new Date(Math.min(...times));
+      const maxTime = new Date(Math.max(...times));
+      
+      logger.info(`Deleting existing ${targetType} predictions for user ${userId} between ${minTime} and ${maxTime}`);
+      
+      // Delete only predictions within this time range, for this user and target type
+      await client.query(
+        'DELETE FROM predictions WHERE user_id = $1 AND prediction_type = $2 AND time_dt BETWEEN $3 AND $4 AND ' + 
+        (targetType === 'cpu' ? 'average_usage_cpu IS NOT NULL' : 'average_usage_memory IS NOT NULL'),
+        [userId, predictions[0].prediction_type, minTime, maxTime]
       );
       
-      return rows.reverse(); // Return in chronological order
+      // Insert new predictions
+      for (const prediction of predictions) {
+        const timestamp = new Date(prediction.time_dt);
+        const value = prediction[targetColumn];
+        const predictionType = prediction.prediction_type || 'xgboost';
+        
+        if (targetType === 'cpu') {
+          await client.query(
+            `INSERT INTO predictions 
+            (time_dt, average_usage_cpu, prediction_type, user_id) 
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (time_dt, user_id, prediction_type) 
+            DO UPDATE SET average_usage_cpu = $2`,
+            [timestamp, value, predictionType, userId]
+          );
+        } else {
+          await client.query(
+            `INSERT INTO predictions 
+            (time_dt, average_usage_memory, prediction_type, user_id) 
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (time_dt, user_id, prediction_type) 
+            DO UPDATE SET average_usage_memory = $2`,
+            [timestamp, value, predictionType, userId]
+          );
+        }
+      }
+      
+      await client.query('COMMIT');
     } catch (err) {
-      logger.error('Error fetching latest predictions:', err);
+      await client.query('ROLLBACK');
+      logger.error('Error saving predictions to database:', err);
       throw err;
+    } finally {
+      client.release();
     }
   }
   
   /**
-   * Get both historical data and predictions for a specific target
-   * @param {string} target - Target variable (cpu or memory)
-   * @param {number} historyLimit - Number of historical records to include
-   * @param {number} predictionLimit - Number of prediction records to include
-   * @returns {Promise<Object>} - Object with historical and prediction data
+   * Get latest predictions for a target variable
+   * @param {string} target - Target variable ('cpu' or 'memory')
+   * @param {number} limit - Number of predictions to return
+   * @param {number} userId - User ID (optional)
+   * @returns {Promise<Array>} - Array of prediction objects
    */
-  async getDataAndPredictions(target = 'cpu', historyLimit = 100, predictionLimit = 24) {
-    const column = target.toLowerCase() === 'cpu' 
-      ? 'average_usage_cpu' 
-      : 'average_usage_memory';
+  async getLatestPredictions(target = 'cpu', limit = 24, userId = null) {
+    const column = target === 'cpu' ? 'average_usage_cpu' : 'average_usage_memory';
     
     try {
+      let query;
+      let params;
+      
+      if (userId) {
+        // Query with user filter
+        query = `
+          SELECT time_dt, ${column}, prediction_type
+          FROM predictions
+          WHERE ${column} IS NOT NULL AND user_id = $1
+          ORDER BY time_dt ASC
+          LIMIT $2
+        `;
+        params = [userId, limit];
+      } else {
+        // Query without user filter (system user or all)
+        query = `
+          SELECT time_dt, ${column}, prediction_type
+          FROM predictions
+          WHERE ${column} IS NOT NULL
+          ORDER BY time_dt ASC
+          LIMIT $1
+        `;
+        params = [limit];
+      }
+      
+      const { rows } = await db.query(query, params);
+      return rows;
+    } catch (error) {
+      logger.error(`Error fetching latest ${target} predictions:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Get combined historical data and predictions
+   * @param {string} target - Target variable ('cpu' or 'memory')
+   * @param {number} historyLimit - Number of historical data points
+   * @param {number} predictionLimit - Number of prediction points
+   * @param {number} userId - User ID (optional)
+   * @returns {Promise<Object>} - Object with historical and prediction data
+   */
+  async getDataAndPredictions(target = 'cpu', historyLimit = 100, predictionLimit = 24, userId = null) {
+    try {
+      const column = target === 'cpu' ? 'average_usage_cpu' : 'average_usage_memory';
+      
       // Get historical data
-      const historicalResult = await db.query(
-        `SELECT time_dt, ${column}
-         FROM historical_data
-         WHERE ${column} IS NOT NULL
-         ORDER BY time_dt DESC
-         LIMIT $1`,
-        [historyLimit]
-      );
+      let historyQuery;
+      let historyParams;
+      
+      if (userId) {
+        historyQuery = `
+          SELECT time_dt, ${column}
+          FROM historical_data
+          WHERE ${column} IS NOT NULL AND user_id = $1
+          ORDER BY time_dt DESC
+          LIMIT $2
+        `;
+        historyParams = [userId, historyLimit];
+      } else {
+        historyQuery = `
+          SELECT time_dt, ${column}
+          FROM historical_data
+          WHERE ${column} IS NOT NULL
+          ORDER BY time_dt DESC
+          LIMIT $1
+        `;
+        historyParams = [historyLimit];
+      }
+      
+      const historyResult = await db.query(historyQuery, historyParams);
       
       // Get predictions
-      const predictionsResult = await db.query(
-        `SELECT time_dt, ${column}, prediction_type
-         FROM predictions
-         WHERE ${column} IS NOT NULL
-         ORDER BY time_dt ASC
-         LIMIT $1`,
-        [predictionLimit]
-      );
+      let predictionsQuery;
+      let predictionsParams;
+      
+      if (userId) {
+        predictionsQuery = `
+          SELECT time_dt, ${column}, prediction_type
+          FROM predictions
+          WHERE ${column} IS NOT NULL AND user_id = $1
+          ORDER BY time_dt ASC
+          LIMIT $2
+        `;
+        predictionsParams = [userId, predictionLimit];
+      } else {
+        predictionsQuery = `
+          SELECT time_dt, ${column}, prediction_type
+          FROM predictions
+          WHERE ${column} IS NOT NULL
+          ORDER BY time_dt ASC
+          LIMIT $1
+        `;
+        predictionsParams = [predictionLimit];
+      }
+      
+      const predictionsResult = await db.query(predictionsQuery, predictionsParams);
       
       return {
-        historical: historicalResult.rows.reverse(), // Chronological order
+        historical: historyResult.rows.reverse(), // Return in chronological order
         predictions: predictionsResult.rows
       };
-    } catch (err) {
-      logger.error(`Error fetching data and predictions for ${target}:`, err);
-      throw err;
+    } catch (error) {
+      logger.error(`Error fetching ${target} data and predictions:`, error);
+      throw error;
     }
   }
 }

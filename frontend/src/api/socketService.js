@@ -51,12 +51,12 @@ class SocketService {
     });
 
     this.socket.on('initialData', (data) => {
-      console.log(`Initial ${data.target} data received`);
+      console.log(`Initial data received`);
       this.callbacks.initialData.forEach(callback => callback(data));
     });
 
     this.socket.on('dataUpdate', (data) => {
-      // console.log(`${data.target} data update received`);
+      console.log(`Data update received`);
       this.callbacks.dataUpdate.forEach(callback => callback(data));
     });
 
@@ -78,17 +78,17 @@ class SocketService {
   }
 
   /**
-   * Subscribe to a specific data target
-   * @param {string} target - Data target ('cpu' or 'memory')
+   * Subscribe to data updates for a specific user
+   * @param {string} username - Username for filtering data
    */
-  subscribeToTarget(target) {
+  subscribeToData(username = null) {
     if (!this.socket) {
       console.error('WebSocket not connected');
       return;
     }
 
-    this.socket.emit('subscribe', target);
-    console.log(`Subscribed to ${target} updates`);
+    this.socket.emit('subscribe', { username });
+    console.log(`Subscribed to data updates${username ? ` for user: ${username}` : ''}`);
   }
 
   /**

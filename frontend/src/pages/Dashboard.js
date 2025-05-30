@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import LoadChart from '../components/LoadChart';
 import ControlPanel from '../components/ControlPanel';
 import useData from '../hooks/useData';
+import { UserContext } from '../context/UserContext';
 
 /**
  * Dashboard page component showing load charts and controls
@@ -11,11 +12,14 @@ const Dashboard = () => {
     cpuData, 
     memoryData
   } = useData();
-  
+
+  const { currentUser } = useContext(UserContext);
+  const isUserSelected = !!currentUser;
+
   // Check loading states
   const cpuIsLoading = cpuData.isLoading;
   const memoryIsLoading = memoryData.isLoading;
-  
+
   // Check for errors
   const cpuError = cpuData.error;
   const memoryError = memoryData.error;
@@ -27,7 +31,7 @@ const Dashboard = () => {
         <p>Visualizing CPU and Memory usage predictions</p>
       </div>
       
-      <ControlPanel />
+      <ControlPanel isUserSelected={isUserSelected}/>
       
       <div className="charts-container">
         <div className="chart-container">
@@ -50,6 +54,7 @@ const Dashboard = () => {
             <LoadChart 
               historicalData={cpuData.historical} 
               predictionData={cpuData.predictions} 
+              isUserSelected={isUserSelected}
               target="cpu"
               height={350}
             />
@@ -75,7 +80,8 @@ const Dashboard = () => {
           {!memoryIsLoading && !memoryError && (
             <LoadChart 
               historicalData={memoryData.historical} 
-              predictionData={memoryData.predictions} 
+              predictionData={memoryData.predictions}
+              isUserSelected={isUserSelected}
               target="memory"
               height={350}
             />

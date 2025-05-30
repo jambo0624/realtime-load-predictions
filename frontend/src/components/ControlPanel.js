@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import useData from '../hooks/useData';
 import { useNotification } from '../context/NotificationContext';
+import UserSelect from './UserSelect';
 
 /**
  * Control panel component for managing predictions
  */
-const ControlPanel = () => {
+const ControlPanel = ({ isUserSelected = false }) => {
   const { 
     connectionStatus, 
     runPrediction, 
     importData, 
+    importSpecificFile,
     refreshData 
   } = useData();
   
@@ -21,6 +23,11 @@ const ControlPanel = () => {
    * Run prediction with specified data file
    */
   const handleRunPrediction = async () => {
+    if (!isUserSelected) {
+      showError('Please select a user');
+      return;
+    }
+    
     if (!dataFile) {
       showError('Please enter a data file name');
       return;
@@ -47,10 +54,32 @@ const ControlPanel = () => {
     
     try {
       const response = await importData();
-      showSuccess(`Imported data successfully: ${response.message}`);
+      showSuccess(`Imported all data successfully: ${response.message}`);
       refreshData(); // Refresh data after import
     } catch (err) {
       showError(err.message || 'Error importing data');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  /**
+   * Import specific file
+   */
+  const handleImportSpecificFile = async () => {
+    if (!dataFile) {
+      showError('Please enter a data file name');
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      const response = await importSpecificFile(dataFile);
+      showSuccess(`Imported file successfully: ${response.message}`);
+      refreshData(); // Refresh data after import
+    } catch (err) {
+      showError(err.message || 'Error importing file');
     } finally {
       setLoading(false);
     }
@@ -60,10 +89,14 @@ const ControlPanel = () => {
     <div className="control-panel">
       <h2>Control Panel</h2>
       
-      <div className="status-indicator">
-        <div className="connection-status">
-          WebSocket: <span className={connectionStatus}>{connectionStatus}</span>
+      <div className="panel-row">
+        <div className="status-indicator">
+          <div className="connection-status">
+            WebSocket: <span className={connectionStatus}>{connectionStatus}</span>
+          </div>
         </div>
+        
+        <UserSelect />
       </div>
       
       <div className="prediction-controls">
@@ -84,21 +117,28 @@ const ControlPanel = () => {
         <div className="button-group">
           <button 
             onClick={handleRunPrediction} 
-            disabled={loading}
+            disabled={loading || !isUserSelected}
           >
             {loading ? 'Running...' : 'Run Prediction'}
+          </button>
+          
+          <button 
+            onClick={handleImportSpecificFile} 
+            disabled={loading}
+          >
+            {loading ? 'Importing...' : 'Import File'}
           </button>
           
           <button 
             onClick={handleImportData} 
             disabled={loading}
           >
-            {loading ? 'Importing...' : 'Import Data'}
+            {loading ? 'Importing...' : 'Import All Files'}
           </button>
           
           <button 
             onClick={refreshData} 
-            disabled={loading}
+            disabled={loading || !isUserSelected}
           >
             Refresh Data
           </button>
@@ -113,8 +153,13 @@ const ControlPanel = () => {
           margin-bottom: 20px;
         }
         
+        .panel-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        
         .status-indicator {
-          margin-bottom: 15px;
         }
         
         .connection-status .connected {

@@ -1,6 +1,7 @@
 const socketIo = require('socket.io');
 const logger = require('../utils/logger');
 const predictionService = require('./predictionService');
+const userService = require('../services/userService');
 
 class WebsocketService {
   constructor() {
@@ -39,14 +40,29 @@ class WebsocketService {
     logger.info(`New client connected: ${socket.id}`);
     this.clients.add(socket.id);
     
-    // Send initial data
-    this.sendInitialData(socket);
+    // Store user information for this socket
+    socket.userData = {
+      username: null
+    };
     
-    // Handle subscription to specific target (cpu/memory)
-    socket.on('subscribe', (target) => {
-      logger.info(`Client ${socket.id} subscribed to ${target} updates`);
-      socket.join(target);
-      this.sendDataForTarget(socket, target);
+    // Handle subscription
+    socket.on('subscribe', async (data) => {
+      // Extract username from data
+      const username = data.username || null;
+      
+      // Store username for this socket
+      socket.userData.username = username;
+      
+      // Create room name based on username
+      const roomName = username ? `user_${username}` : 'default';
+      
+      logger.info(`Client ${socket.id} subscribed to data updates${username ? ` for user: ${username}` : ''}`);
+      
+      // Join room for this user
+      socket.join(roomName);
+      
+      // Send initial data for this user
+      await this.sendInitialData(socket, username);
     });
     
     // Handle client disconnection
@@ -59,43 +75,35 @@ class WebsocketService {
   /**
    * Send initial data to a newly connected client
    * @param {Object} socket - Socket.io socket instance
+   * @param {string} username - Username for filtering data
    */
-  async sendInitialData(socket) {
+  async sendInitialData(socket, username = null) {
     try {
-      // Send CPU data
-      const cpuData = await predictionService.getDataAndPredictions('cpu', 50, 24);
+      let userId = null;
+      
+      // Get user ID if username is provided
+      if (username) {
+        const user = await userService.getUserByUsername(username);
+        if (user) {
+          userId = user.id;
+        } else {
+          logger.warn(`User ${username} not found`);
+        }
+      }
+      
+      // Get CPU and memory data
+      const cpuData = await predictionService.getDataAndPredictions('cpu', 50, 24, userId);
+      const memoryData = await predictionService.getDataAndPredictions('memory', 50, 24, userId);
+      
+      // Send combined data
       socket.emit('initialData', { 
-        target: 'cpu',
-        data: cpuData
+        cpu: cpuData,
+        memory: memoryData
       });
       
-      // Send Memory data
-      const memoryData = await predictionService.getDataAndPredictions('memory', 50, 24);
-      socket.emit('initialData', { 
-        target: 'memory',
-        data: memoryData
-      });
-      
-      logger.info(`Sent initial data to client ${socket.id}`);
+      logger.info(`Sent initial data to client ${socket.id}${username ? ` for user: ${username}` : ''}`);
     } catch (err) {
       logger.error(`Error sending initial data to client ${socket.id}:`, err);
-    }
-  }
-  
-  /**
-   * Send data for a specific target to a client
-   * @param {Object} socket - Socket.io socket instance
-   * @param {string} target - Target variable (cpu/memory)
-   */
-  async sendDataForTarget(socket, target) {
-    try {
-      const data = await predictionService.getDataAndPredictions(target, 50, 24);
-      socket.emit('dataUpdate', { 
-        target,
-        data
-      });
-    } catch (err) {
-      logger.error(`Error sending ${target} data to client ${socket.id}:`, err);
     }
   }
   
@@ -112,23 +120,47 @@ class WebsocketService {
       }
       
       try {
-        // Get latest CPU data
-        const cpuData = await predictionService.getDataAndPredictions('cpu', 50, 24);
-        this.io.to('cpu').emit('dataUpdate', {
-          target: 'cpu',
-          data: cpuData,
-          timestamp: new Date()
-        });
+        // Get all unique user rooms
+        const rooms = this.io.sockets.adapter.rooms;
         
-        // Get latest Memory data
-        const memoryData = await predictionService.getDataAndPredictions('memory', 50, 24);
-        this.io.to('memory').emit('dataUpdate', {
-          target: 'memory',
-          data: memoryData,
-          timestamp: new Date()
-        });
+        for (const room of rooms.keys()) {
+          // Skip non-user rooms (Socket.IO internal rooms)
+          if (!room.startsWith('user_') && room !== 'default') {
+            continue;
+          }
+          
+          let username = null;
+          let userId = null;
+          
+          // Extract username if present (format: user_username)
+          if (room !== 'default') {
+            username = room.substring(5); // Remove 'user_' prefix
+            
+            // Get user ID
+            const user = await userService.getUserByUsername(username);
+            if (user) {
+              userId = user.id;
+            } else {
+              logger.warn(`User ${username} not found for room ${room}`);
+              continue;
+            }
+          }
+          
+          // Get CPU and memory data for this user
+          const cpuData = await predictionService.getDataAndPredictions('cpu', 50, 24, userId);
+          const memoryData = await predictionService.getDataAndPredictions('memory', 50, 24, userId);
+          
+          // Send combined data update
+          this.io.to(room).emit('dataUpdate', {
+            cpu: cpuData,
+            memory: memoryData,
+            timestamp: new Date()
+          });
+          
+          logger.debug(`Sent data update to room ${room}`);
+        }
         
-        logger.debug(`Sent data updates to ${this.clients.size} clients`);
+        logger.debug(`Completed updates for ${this.clients.size} clients`);
       } catch (err) {
         logger.error('Error sending periodic updates:', err);
       }

@@ -47,7 +47,9 @@ module.exports = {
           CONSTRAINT fk_historical_user
             FOREIGN KEY (user_id)
             REFERENCES users(id)
-            ON DELETE SET NULL
+            ON DELETE SET NULL,
+          CONSTRAINT unique_historical_time_user
+            UNIQUE (time_dt, user_id)
         )
       `);
 
@@ -58,12 +60,15 @@ module.exports = {
           time_dt TIMESTAMP NOT NULL,
           average_usage_cpu NUMERIC(10, 6),
           average_usage_memory NUMERIC(10, 6),
+          prediction_type VARCHAR(50) DEFAULT 'xgboost',
           user_id INTEGER,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           CONSTRAINT fk_predictions_user
             FOREIGN KEY (user_id)
             REFERENCES users(id)
-            ON DELETE SET NULL
+            ON DELETE SET NULL,
+          CONSTRAINT unique_prediction_time_user_type
+            UNIQUE (time_dt, user_id, prediction_type)
         )
       `);
 
@@ -86,6 +91,7 @@ module.exports = {
 
       // Create indexes for better performance
       await pool.query(`
+        -- Basic indexes
         CREATE INDEX IF NOT EXISTS idx_historical_time ON historical_data(time_dt);
         CREATE INDEX IF NOT EXISTS idx_predictions_time ON predictions(time_dt);
         CREATE INDEX IF NOT EXISTS idx_historical_user_id ON historical_data(user_id);

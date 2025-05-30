@@ -28,7 +28,7 @@ ChartJS.register(
 /**
  * Chart component for displaying load data
  */
-const LoadChart = ({ historicalData = [], predictionData = [], target = 'cpu', height = 300 }) => {
+const LoadChart = ({ historicalData = [], predictionData = [], target = 'cpu', height = 300, isUserSelected }) => {
   const [chartData, setChartData] = useState(null);
   const [maxValue, setMaxValue] = useState(0);
   
@@ -130,6 +130,11 @@ const LoadChart = ({ historicalData = [], predictionData = [], target = 'cpu', h
       }
     }
   };
+
+  // If no user is selected, show a message
+  if (!isUserSelected) {
+    return <div>Please select a user to view the chart</div>;
+  }
   
   // Show loading message if no data
   if (!chartData) {
