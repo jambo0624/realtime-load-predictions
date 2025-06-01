@@ -5,21 +5,25 @@ import { NotificationProvider } from './context/NotificationContext';
 import { UserProvider } from './context/UserContext';
 import Notifications from './components/Notifications';
 import Dashboard from './pages/Dashboard';
+import { MantineProvider } from '@mantine/core';
+import '@mantine/core/styles.css';
 
 function App() {
   return (
-    <Router>
-      <NotificationProvider>
-        <UserProvider>
-          <DataProvider>
-            <Notifications />
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-            </Routes>
-          </DataProvider>
-        </UserProvider>
-      </NotificationProvider>
-    </Router>
+    <MantineProvider>
+      <Router>
+        <NotificationProvider>
+          <UserProvider>
+            <DataProvider>
+              <Notifications />
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+              </Routes>
+            </DataProvider>
+          </UserProvider>
+        </NotificationProvider>
+      </Router>
+    </MantineProvider>
   );
 }
 

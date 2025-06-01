@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import useData from '../hooks/useData';
 import { useNotification } from '../context/NotificationContext';
 import UserSelect from './UserSelect';
+import ModelInfoPopover from './ModelInfoPopover';
 
 /**
  * Control panel component for managing predictions
@@ -12,7 +13,7 @@ const ControlPanel = ({ isUserSelected = false }) => {
     runPrediction, 
     importData, 
     importSpecificFile,
-    refreshData 
+    refreshData,
   } = useData();
   
   const { showSuccess, showError } = useNotification();
@@ -101,7 +102,10 @@ const ControlPanel = ({ isUserSelected = false }) => {
         </div>
         
         <div className="prediction-controls">
-          <h3>Run Prediction</h3>
+          <div className="prediction-controls-header">
+            <h3>Run Prediction</h3>
+            <ModelInfoPopover />
+          </div>
           <div className="input-row">
             <label>
               Data File:
@@ -161,6 +165,11 @@ const ControlPanel = ({ isUserSelected = false }) => {
           border-radius: 4px;
           padding: 15px;
           height: 100%;
+        }
+        
+        .prediction-controls-header {
+          display: flex;
+          align-items: center;
         }
         
         h2 {
