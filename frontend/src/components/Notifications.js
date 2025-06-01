@@ -93,6 +93,7 @@ const Notifications = () => {
           color: inherit;
           padding: 0 5px;
           margin-left: 10px;
+          margin-top: 0;
           flex-grow: 0;
         }
       `}</style>
