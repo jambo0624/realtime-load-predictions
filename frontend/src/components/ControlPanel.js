@@ -97,9 +97,9 @@ const ControlPanel = ({ isUserSelected = false }) => {
               WebSocket: <span className={connectionStatus}>{connectionStatus}</span>
             </div>
           </div>
-          
-          <UserSelect />
         </div>
+
+        <UserSelect />
         
         <div className="prediction-controls">
           <div className="prediction-controls-header">
