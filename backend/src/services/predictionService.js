@@ -323,7 +323,7 @@ class PredictionService {
    * @param {number} userId - User ID (optional)
    * @returns {Promise<Array>} - Array of prediction objects
    */
-  async getLatestPredictions(target = 'cpu', limit = 120, userId = null) {
+  async getLatestPredictions(target = 'cpu', limit = 240, userId = null) {
     const column = target === 'cpu' ? 'average_usage_cpu' : 'average_usage_memory';
     
     try {
@@ -368,7 +368,7 @@ class PredictionService {
    * @param {number} userId - User ID (optional)
    * @returns {Promise<Object>} - Object with historical and prediction data
    */
-  async getDataAndPredictions(target = 'cpu', historyLimit = 50, predictionLimit = 120, userId = null) {
+  async getDataAndPredictions(target = 'cpu', historyLimit = 100, predictionLimit = 240, userId = null) {
     try {
       const column = target === 'cpu' ? 'average_usage_cpu' : 'average_usage_memory';
       

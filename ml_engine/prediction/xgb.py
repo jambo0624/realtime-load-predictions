@@ -659,7 +659,7 @@ def main():
             visualize_predictions(df_with_preds, target_var, clean_user_id(df_clean['user'].iloc[0]))
             
             # 2. Make future predictions
-            future_periods = 24  # Predict 24 time points ahead
+            future_periods = 240  # Predict 24 time points ahead
             
             # Create time features and lag features for the historical data
             if 'time_dt' in df_clean.columns:
@@ -681,10 +681,10 @@ def main():
                     
                     # Add user ID to filename if available in the data
                     if 'user' in future_df.columns:
-                        user_id = str(future_df['user'].iloc[0])
+                        user_id = clean_user_id(str(future_df['user'].iloc[0]))
                         output_filename = f"{target_var}-xgb-user_{user_id}-future_predictions.csv"
                     elif 'user_id' in future_df.columns:
-                        user_id = str(future_df['user_id'].iloc[0])
+                        user_id = clean_user_id(str(future_df['user_id'].iloc[0]))
                         output_filename = f"{target_var}-xgb-user_{user_id}-future_predictions.csv"
                     else:
                         # Use filename to extract user if possible

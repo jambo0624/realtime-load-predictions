@@ -132,7 +132,7 @@ class DataController {
    */
   async getDataAndPredictions(req, res) {
     try {
-      const { target = 'cpu', historyLimit = 100, predictionLimit = 24, username } = req.query;
+      const { target = 'cpu', historyLimit = 100, predictionLimit = 240, username } = req.query;
       
       let userId = null;
       if (username) {
@@ -181,7 +181,7 @@ class DataController {
    */
   async getAllDataAndPredictions(req, res) {
     try {
-      const { historyLimit = 100, predictionLimit = 24, username } = req.query;
+      const { historyLimit = 100, predictionLimit = 240, username } = req.query;
       
       let userId = null;
       if (username) {
@@ -276,7 +276,7 @@ class DataController {
    */
   async getLatestPredictions(req, res) {
     try {
-      const { target = 'cpu', limit = 24, username } = req.query;
+      const { target = 'cpu', limit = 240, username } = req.query;
       
       let userId = null;
       if (username) {
