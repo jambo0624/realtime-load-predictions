@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import useData from '../hooks/useData';
 import { useNotification } from '../context/NotificationContext';
 import UserSelect from './UserSelect';
 import ModelInfoPopover from './ModelInfoPopover';
+import { UserContext } from '../context/UserContext';
 
 /**
  * Control panel component for managing predictions
  */
-const ControlPanel = ({ isUserSelected = false }) => {
+const ControlPanel = () => {
   const {
     connectionStatus, 
     runPrediction, 
@@ -15,7 +16,10 @@ const ControlPanel = ({ isUserSelected = false }) => {
     importSpecificFile,
     refreshData,
   } = useData();
-  
+
+  const { currentUser } = useContext(UserContext);
+  const isUserSelected = !!currentUser; 
+
   const { showSuccess, showError } = useNotification();
   const [dataFile, setDataFile] = useState('c7_user_DrrEIEW_timeseries.csv');
   const [loading, setLoading] = useState(false);
@@ -37,7 +41,7 @@ const ControlPanel = ({ isUserSelected = false }) => {
     setLoading(true);
     
     try {
-      await runPrediction(dataFile);
+      await runPrediction(dataFile, currentUser);
       showSuccess('Prediction completed successfully');
       refreshData(); // Refresh data after prediction
     } catch (err) {

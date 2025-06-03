@@ -35,7 +35,7 @@ const Dashboard = () => {
       
       <div className="control-resource-container">
         <div className="control-panel-wrapper">
-          <ControlPanel isUserSelected={isUserSelected}/>
+          <ControlPanel />
         </div>
         <div className="resource-management-wrapper">
           <ResourceManagement isUserSelected={isUserSelected} />
