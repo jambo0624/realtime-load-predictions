@@ -153,6 +153,16 @@ def make_predictions(model, scaler, df, target_var, target_vars=None):
     df_with_preds = df.copy()
     df_with_preds[f'{target_var}_predicted'] = predictions
     
+    # Handle duplicate timestamps if time_dt column exists
+    if 'time_dt' in df_with_preds.columns:
+        # Check for duplicates
+        time_dt_col = 'time_dt'
+        df_with_preds[time_dt_col] = pd.to_datetime(df_with_preds[time_dt_col])
+        
+        dup_count = df_with_preds[time_dt_col].duplicated().sum()
+        if dup_count > 0:
+            print(f"Warning: Found {dup_count} duplicate timestamps after prediction.")
+    
     print(f"Generated {len(predictions)} predictions")
     return df_with_preds, predictions
 
@@ -164,12 +174,35 @@ def visualize_predictions(df, target_var, user_id, max_points=1000, use_time=Tru
         print(f"Error: Prediction column {prediction_col} not found")
         return
     
+    # Create a copy to work with
+    df_vis = df.copy()
+    
+    # Handle duplicate timestamps if using time as x-axis
+    if 'time_dt' in df_vis.columns and use_time:
+        # Ensure time_dt is datetime
+        df_vis['time_dt'] = pd.to_datetime(df_vis['time_dt'])
+        
+        # Check for duplicates
+        dup_count = df_vis['time_dt'].duplicated().sum()
+        if dup_count > 0:
+            print(f"Found {dup_count} duplicate timestamps. Aggregating data points at minute precision.")
+            
+            # Group by time_dt and aggregate values (mean)
+            df_vis = df_vis.groupby('time_dt').agg({
+                target_var: 'mean',
+                prediction_col: 'mean'
+            }).reset_index()
+    
     # Sample if too many data points
-    if len(df) > max_points:
-        df_sample = df.sample(max_points)
+    if len(df_vis) > max_points:
+        df_sample = df_vis.sample(max_points)
         print(f"Too many data points, randomly sampling {max_points} points for visualization")
     else:
-        df_sample = df
+        df_sample = df_vis
+        
+    # Sort by time if using time column
+    if 'time_dt' in df_sample.columns and use_time:
+        df_sample = df_sample.sort_values('time_dt')
     
     # Create visualization
     plt.figure(figsize=(15, 6))
@@ -218,8 +251,9 @@ def create_time_features(df, time_col='time_dt'):
     # Make a copy to avoid modifying the original
     df_new = df.copy()
     
-    # Ensure time column is datetime type
+    # Ensure time column is datetime type and floored to minute precision
     df_new[time_col] = pd.to_datetime(df_new[time_col])
+    df_new[time_col] = df_new[time_col].dt.floor('min')
     
     # Create datetime features
     df_new['hour_of_day'] = df_new[time_col].dt.hour
@@ -313,7 +347,11 @@ def create_future_timepoints(df, future_periods=24, time_col='time_dt'):
     
     # Create future dataframe
     future_df = pd.DataFrame({time_col: future_times})
-    print(f"Created dataframe with {len(future_df)} future time points")
+    
+    # Floor timestamps to minute precision (ignoring seconds)
+    future_df[time_col] = future_df[time_col].dt.floor('min')
+    
+    print(f"Created dataframe with {len(future_df)} future time points (minute precision)")
     
     return future_df
 
@@ -332,7 +370,9 @@ def predict_future_values(model, scaler, historical_df, future_periods=24, targe
     time_col = 'time_dt'
     if time_col in working_df.columns:
         working_df[time_col] = pd.to_datetime(working_df[time_col])
-    
+        # Floor historical timestamps to minute precision
+        working_df[time_col] = working_df[time_col].dt.floor('min')
+
     # Sort by time
     if time_col in working_df.columns:
         working_df = working_df.sort_values(time_col).reset_index(drop=True)
@@ -555,16 +595,55 @@ def predict_future_values(model, scaler, historical_df, future_periods=24, targe
 
 def visualize_future_predictions(historical_df, future_df, target_var, user_id, time_col='time_dt'):
     """Visualize historical data and future predictions"""
+    # Create copies to work with
+    hist_df = historical_df.copy()
+    fut_df = future_df.copy()
+    
+    # Handle duplicate timestamps in both dataframes
+    if time_col in hist_df.columns:
+        # Ensure time column is datetime type
+        hist_df[time_col] = pd.to_datetime(hist_df[time_col])
+        
+        # Check for duplicates
+        dup_count = hist_df[time_col].duplicated().sum()
+        if dup_count > 0:
+            print(f"Found {dup_count} duplicate historical timestamps. Aggregating data points.")
+            
+            # Group by time_col and aggregate values (mean)
+            hist_df = hist_df.groupby(time_col).agg({
+                target_var: 'mean'
+            }).reset_index()
+            
+        # Sort by time
+        hist_df = hist_df.sort_values(time_col)
+    
+    if time_col in fut_df.columns:
+        # Ensure time column is datetime type
+        fut_df[time_col] = pd.to_datetime(fut_df[time_col])
+        
+        # Check for duplicates
+        dup_count = fut_df[time_col].duplicated().sum()
+        if dup_count > 0:
+            print(f"Found {dup_count} duplicate future timestamps. Aggregating data points.")
+            
+            # Group by time_col and aggregate values (mean)
+            fut_df = fut_df.groupby(time_col).agg({
+                target_var: 'mean'
+            }).reset_index()
+            
+        # Sort by time
+        fut_df = fut_df.sort_values(time_col)
+    
     plt.figure(figsize=(15, 6))
     
-    # Plot historical data
-    plt.plot(historical_df[time_col].iloc[-100:], historical_df[target_var].iloc[-100:], 'b-', label='Historical data')
+    # Plot historical data - use last 100 data points only
+    plt.plot(hist_df[time_col].iloc[-100:], hist_df[target_var].iloc[-100:], 'b-', label='Historical data')
     
     # Plot future predictions
-    plt.plot(future_df[time_col], future_df[target_var], 'r--', label='Future predictions')
+    plt.plot(fut_df[time_col], fut_df[target_var], 'r--', label='Future predictions')
     
     # Add vertical line to mark prediction start
-    plt.axvline(x=historical_df[time_col].max(), color='green', linestyle='--', label='Prediction start')
+    plt.axvline(x=hist_df[time_col].max(), color='green', linestyle='--', label='Prediction start')
     
     plt.xlabel('Time')
     plt.ylabel(target_var)
@@ -576,7 +655,7 @@ def visualize_future_predictions(historical_df, future_df, target_var, user_id, 
     # Save image
     output_dir = '../prediction_results'
     os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, f"{target_var}-rf-{user_id}-future_predictions.png"))
+    #plt.savefig(os.path.join(output_dir, f"{target_var}-rf-{user_id}-future_predictions.png"))
     plt.show()
 
 def clean_user_id(user_id):
@@ -618,6 +697,11 @@ def main():
         df = pd.read_csv(data_path)
         print(f"Successfully read data, shape: {df.shape}")
         
+        # Process time features if present
+        if 'time_dt' in df.columns:
+            df['time_dt'] = pd.to_datetime(df['time_dt']).dt.floor('min')
+            print("Processed time_dt column to minute precision")
+
         # Check if user information exists
         user_columns = [col for col in df.columns if col == 'user' or col == 'user_id' or col.startswith('user_')]
         if user_columns:
@@ -672,6 +756,10 @@ def main():
                 )
                 
                 if future_df is not None:
+                    # Make sure time_dt is floored to minute precision
+                    if 'time_dt' in future_df.columns:
+                        future_df['time_dt'] = pd.to_datetime(future_df['time_dt']).dt.floor('min')
+                    
                     # Visualize future predictions
                     visualize_future_predictions(df_features, future_df, target_var, clean_user_id(future_df['user'].iloc[0]))
                     

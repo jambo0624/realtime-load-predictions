@@ -8,12 +8,12 @@ import memoryModelPlaceholder from '../assets/images/memory_model_performance.pn
  * Shows model metrics and performance charts on hover
  */
 const ModelInfoPopover = () => {
-  const cpuRMSE = 0.004592;
-  const cpuMAE = 0.002362;
-  const cpuR2 = 0.998109;
-  const memoryRMSE = 0.00102;
-  const memoryMAE = 0.000649;
-  const memoryR2 = 0.999635;
+  const cpuRMSE = 0.003145;
+  const cpuMAE = 0.001679;
+  const cpuR2 = 0.999361;
+  const memoryRMSE = 0.00099;
+  const memoryMAE = 0.000636;
+  const memoryR2 = 0.999729;
 
   const ModelPopoverContent = () => (
     <Stack p="md" w={550} spacing="md">
