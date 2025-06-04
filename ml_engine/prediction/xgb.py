@@ -21,8 +21,18 @@ warnings.filterwarnings('ignore')
 # Set matplotlib style
 plt.style.use('ggplot')
 
-def load_model(target_var, model_dir='../models'):
+def load_model(target_var, model_dir=None):
     """Load model and scaler from file"""
+    if model_dir is None:
+        # Get the absolute path of the current script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Calculate the models directory relative to the script location
+        model_dir = os.path.join(script_dir, '..', 'models')
+    
+    # Ensure the path is absolute
+    model_dir = os.path.abspath(model_dir)
+    print(f"Using model directory: {model_dir}")
+
     if 'memory' in target_var.lower():
         model_path = os.path.join(model_dir, 'xgb_memory_model.pkl')
         scaler_path = os.path.join(model_dir, 'xgb_memory_scaler.pkl')
@@ -655,7 +665,7 @@ def visualize_future_predictions(historical_df, future_df, target_var, user_id, 
     # Save image
     output_dir = '../prediction_results'
     os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, f"{target_var}-xgb-{user_id}-future_predictions.png"))
+    #plt.savefig(os.path.join(output_dir, f"{target_var}-xgb-{user_id}-future_predictions.png"))
     plt.show()
 
 
@@ -685,13 +695,29 @@ def clean_user_id(user_id):
 def main():
     """Main function to demonstrate the prediction workflow"""
     # Check command line arguments
-    if len(sys.argv) > 1:
-        data_path = sys.argv[1]
-    else:
-        # Default data path
+    if len(sys.argv) < 2:
+        print("Usage: python xgb.py <data_path> [output_dir] [output_filename_prefix] [model_dir]")
+        print("Using default values")
         data_path = '../processed_data/c7_user_DrrEIEW_timeseries.csv'
+        output_dir = '../prediction_results'
+        output_filename_prefix = None
+        model_dir = '../models'
+    else:
+        data_path = sys.argv[1]
+        # Get output directory from command line or use default
+        output_dir = sys.argv[2] if len(sys.argv) > 2 else '../prediction_results'
+        # Get output filename prefix from command line or use None
+        output_filename_prefix = sys.argv[3] if len(sys.argv) > 3 else None
+        # Get model directory from command line or use default
+        model_dir = sys.argv[4] if len(sys.argv) > 4 else '../models'
     
     print(f"Reading data file: {data_path}")
+    print(f"Output directory: {output_dir}")
+    print(f"Output filename prefix: {output_filename_prefix or 'auto-generated'}")
+    print(f"Model directory: {model_dir}")
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
     
     try:
         # Read data
@@ -733,14 +759,14 @@ def main():
             df_clean = df.dropna(subset=[target_var])
             
             # 1. Make predictions on existing data
-            model, scaler = load_model(target_var)
+            model, scaler = load_model(target_var, model_dir)
             if model is None or scaler is None:
                 continue
                 
             df_with_preds, _ = make_predictions(model, scaler, df_clean, target_var)
             
             # Visualize predictions
-            visualize_predictions(df_with_preds, target_var, clean_user_id(df_clean['user'].iloc[0]))
+            #visualize_predictions(df_with_preds, target_var, clean_user_id(df_clean['user'].iloc[0]))
             
             # 2. Make future predictions
             future_periods = 240  # Predict 24 time points ahead
@@ -762,32 +788,36 @@ def main():
                         future_df['time_dt'] = pd.to_datetime(future_df['time_dt']).dt.floor('min')
                     
                     # Visualize future predictions
-                    visualize_future_predictions(df_features, future_df, target_var, clean_user_id(future_df['user'].iloc[0]))
+                    #visualize_future_predictions(df_features, future_df, target_var, clean_user_id(future_df['user'].iloc[0]))
                     
-                    # Save predictions
-                    output_dir = '../prediction_results'
-                    
-                    # Add user ID to filename if available in the data
-                    if 'user' in future_df.columns:
-                        user_id = clean_user_id(str(future_df['user'].iloc[0]))
-                        output_filename = f"{target_var}-xgb-user_{user_id}-future_predictions.csv"
-                    elif 'user_id' in future_df.columns:
-                        user_id = clean_user_id(str(future_df['user_id'].iloc[0]))
-                        output_filename = f"{target_var}-xgb-user_{user_id}-future_predictions.csv"
+                    # Determine output filename
+                    if output_filename_prefix:
+                        # Use provided prefix if available
+                        output_filename = f"{output_filename_prefix}_{target_var}.csv"
                     else:
-                        # Use filename to extract user if possible
-                        try:
-                            filename = os.path.basename(data_path)
-                            if 'user_' in filename:
-                                user_id = filename.split('user_')[1].split('_')[0]
-                                output_filename = f"{target_var}-xgb-user_{user_id}-future_predictions.csv"
-                            else:
+                        # Add user ID to filename if available in the data
+                        if 'user' in future_df.columns:
+                            user_id = clean_user_id(str(future_df['user'].iloc[0]))
+                            output_filename = f"{target_var}-xgb-user_{user_id}-future_predictions.csv"
+                        elif 'user_id' in future_df.columns:
+                            user_id = clean_user_id(str(future_df['user_id'].iloc[0]))
+                            output_filename = f"{target_var}-xgb-user_{user_id}-future_predictions.csv"
+                        else:
+                            # Use filename to extract user if possible
+                            try:
+                                filename = os.path.basename(data_path)
+                                if 'user_' in filename:
+                                    user_id = filename.split('user_')[1].split('_')[0]
+                                    output_filename = f"{target_var}-xgb-user_{user_id}-future_predictions.csv"
+                                else:
+                                    output_filename = f"{target_var}-xgb-future_predictions.csv"
+                            except:
                                 output_filename = f"{target_var}-xgb-future_predictions.csv"
-                        except:
-                            output_filename = f"{target_var}-xgb-future_predictions.csv"
                     
-                    future_df.to_csv(os.path.join(output_dir, output_filename), index=False)
-                    print(f"Future predictions saved to {output_dir}/{output_filename}")
+                    # Save predictions to the specified output directory with the determined filename
+                    output_path = os.path.join(output_dir, output_filename)
+                    future_df.to_csv(output_path, index=False)
+                    print(f"Future predictions saved to {output_path}")
             else:
                 print("Error: Time column 'time_dt' not found, cannot make future predictions")
     
