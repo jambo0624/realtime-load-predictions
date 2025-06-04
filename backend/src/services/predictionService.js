@@ -10,6 +10,29 @@ const userService = require('./userService');
 
 class PredictionService {
     /**
+   * Check if user already has prediction data
+   * @param {number} userId - User ID to check
+   * @returns {Promise<{hasPredictions: boolean, count: number}>} - Result with prediction count
+   */
+  async userHasPredictions(userId) {
+    try {
+      const { rows } = await db.query(
+        'SELECT COUNT(*) FROM predictions WHERE user_id = $1',
+        [userId]
+      );
+      
+      const count = parseInt(rows[0]?.count || '0');
+      return {
+        hasPredictions: count > 0,
+        count
+      };
+    } catch (error) {
+      logger.error(`Error checking predictions for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Run a multi-step rolling prediction using database data
    * Each step uses predictions from previous steps as input
    * @param {number} userId - User ID to run prediction for
@@ -23,6 +46,18 @@ class PredictionService {
     logger.info(`Starting rolling prediction for user ${userId}`);
     
     try {
+      // Check if user already has predictions
+      const predictionCheck = await this.userHasPredictions(userId);
+      
+      if (predictionCheck.hasPredictions) {
+        logger.warn(`User ${userId} already has ${predictionCheck.count} predictions. Skipping new prediction.`);
+        return {
+          status: 'skipped',
+          message: `User already has ${predictionCheck.count} predictions. Clear existing predictions before running new ones.`,
+          existingPredictions: predictionCheck.count
+        };
+      }
+      
       // Number of data points per prediction
       const pointsPerStep = 240;
       // Always use 2 steps to generate 480 total predictions (24 hours of data with 3-minute intervals)
@@ -946,6 +981,34 @@ class PredictionService {
       };
     } catch (error) {
       logger.error(`Error fetching ${target} data and predictions:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clear all predictions for a user
+   * @param {number} userId - User ID to clear predictions for
+   * @param {string} predictionType - Optional prediction type to clear
+   * @returns {Promise<Object>} - Result with count of deleted records
+   */
+  async clearUserPredictions(userId, predictionType = null) {
+    if (!userId) {
+      throw new Error('User ID is required to clear predictions');
+    }
+    
+    try {
+      logger.info(`Clearing all predictions for user ${userId}${predictionType ? ` of type ${predictionType}` : ''}`);
+      
+      // Use the db method to clear predictions
+      const result = await db.clearPredictions(userId, predictionType);
+      
+      return {
+        status: 'success',
+        message: `Cleared ${result.count} predictions for user ${userId}`,
+        count: result.count
+      };
+    } catch (error) {
+      logger.error(`Error clearing predictions for user ${userId}:`, error);
       throw error;
     }
   }
