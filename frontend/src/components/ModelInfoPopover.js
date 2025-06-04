@@ -94,8 +94,6 @@ const ModelInfoPopover = () => {
       shadow="md"
       withArrow
       arrowPosition="center"
-      openDelay={300}
-      closeDelay={200}
     >
       <Popover.Target>
         <div className="info-button" title="Model Information">
