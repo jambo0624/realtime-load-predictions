@@ -8,7 +8,7 @@ const logger = require('./utils/logger');
 const db = require('./utils/db');
 const dataRoutes = require('./routes/dataRoutes');
 const websocketService = require('./services/websocketService');
-const dataService = require('./services/dataService');
+const predictionService = require('./services/predictionService');
 
 // Create Express app
 const app = express();
@@ -86,18 +86,47 @@ function shutdown() {
   }, 10000);
 }
 
-// Update historical data timestamps and run new prediction every day at 00:00 AM
-//schedule.scheduleJob('0 0 * * *', async function() {
-//  try {
-//    console.log('Updating historical data timestamps...');
-//    await dataService.updateHistoricalDataTimestamps();
+// Update historical data and reset predictions every day at 00:00 AM
+schedule.scheduleJob('0 0 * * *', async function() {
+  try {
+    logger.info('Starting daily data reset process...');
     
-//    console.log('Running prediction with updated data...');
-//    await predictionService.runPrediction('your_data_file.csv');
-//  } catch (err) {
-//    console.error('Daily data update failed:', err);
-//  }
-//});
+    // Get all users
+    const usersResult = await db.query('SELECT id FROM users');
+    const users = usersResult.rows;
+    
+    // For each user, perform the reset process
+    for (const user of users) {
+      const userId = user.id;
+      
+      // Step 1: Clear all predictions for this user
+      logger.info(`Clearing predictions for user ${userId}...`);
+      const clearResult = await db.clearPredictions(userId);
+      logger.info(`Cleared ${clearResult.count} prediction records`);
+      
+      // Step 2: Reset historical data from original historical data
+      logger.info(`Resetting historical data for user ${userId}...`);
+      const resetResult = await db.copyOriginalToHistorical(userId);
+      logger.info(`Reset complete: ${resetResult.count} records copied`);
+      
+      // Step 3: Run initial prediction for the day
+      logger.info(`Running initial prediction for user ${userId}...`);
+      try {
+        const predictionResult = await predictionService.runPrediction(userId);
+        logger.info(`Initial prediction complete for user ${userId}: generated ${predictionResult.totalPredictions} predictions`);
+      } catch (predErr) {
+        logger.error(`Error running prediction for user ${userId}:`, predErr);
+      }
+    }
+    
+    logger.info('Daily data reset process completed successfully');
+    
+    // Notify connected clients about the data update
+    websocketService.notifyDataUpdate('system', 'data_reset');
+  } catch (err) {
+    logger.error('Daily data reset process failed:', err);
+  }
+});
 
 // Start the server
 startServer(); 

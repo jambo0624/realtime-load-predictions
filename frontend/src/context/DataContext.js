@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import dayjs from 'dayjs';
 import socketService from '../api/socketService';
 import apiService from '../api/apiService';
 import { UserContext } from './UserContext';
@@ -27,6 +28,11 @@ export const DataProvider = ({ children }) => {
   
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [notifications, setNotifications] = useState([]);
+  // data window state
+  const [dataWindow, setDataWindow] = useState({
+    startTime: dayjs().subtract(1, 'hour').toDate(), // one hour ago
+    endTime: dayjs().toDate()
+  });
   
   // Get current user from UserContext
   const { currentUser, users, loadUsers, selectUser } = useContext(UserContext);
@@ -55,6 +61,14 @@ export const DataProvider = ({ children }) => {
    * @param {Object} data - Initial data payload with CPU and memory data
    */
   const handleInitialData = useCallback((data) => {
+    // Update data window
+    if (data.timestamp) {
+      setDataWindow(prev => ({
+        ...prev,
+        endTime: dayjs(data.timestamp).toDate()
+      }));
+    }
+    
     // Update CPU data
     setCpuData({
       historical: data.cpu?.historical || [],
@@ -77,6 +91,22 @@ export const DataProvider = ({ children }) => {
    * @param {Object} data - Data update payload with CPU and memory data
    */
   const handleDataUpdate = useCallback((data) => {
+    // Update data window - sliding time window
+    if (data.timestamp) {
+      setDataWindow(prev => {
+        // Calculate time difference
+        const newEndTime = dayjs(data.timestamp).toDate();
+        const timeDiff = dayjs(newEndTime).diff(dayjs(prev.endTime));
+        
+        // sliding window
+        return {
+          startTime: timeDiff > 0 ? dayjs(prev.startTime).add(timeDiff, 'millisecond').toDate() : prev.startTime,
+          endTime: newEndTime,
+          windowStartTime: data.windowStartTime ? dayjs(data.windowStartTime).toDate() : prev.startTime
+        };
+      });
+    }
+    
     // Update CPU data
     setCpuData({
       historical: data.cpu?.historical || [],
@@ -93,6 +123,54 @@ export const DataProvider = ({ children }) => {
       error: null
     });
   }, []);
+
+  /**
+   * Handle WebSocket dataEvent event
+   * @param {Object} event - Event data
+   */
+  const handleDataEvent = useCallback((event) => {
+    // Convert event to notification and add to notification list
+    const notification = {
+      type: event.event,
+      data: event.data,
+      timestamp: event.timestamp,
+      message: getEventMessage(event)
+    };
+    
+    setNotifications(prev => [notification, ...prev].slice(0, 10));
+    
+    // Handle specific event types
+    switch (event.event) {
+      case 'data_reset':
+        // Data reset event - refresh data
+        loadInitialData();
+        break;
+      case 'new_prediction':
+        // New prediction event - refresh data
+        loadInitialData();
+        break;
+      default:
+        // Other event types
+        break;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Get notification message based on event type
+   * @param {Object} event - Event object
+   * @returns {string} - Notification message
+   */
+  const getEventMessage = (event) => {
+    switch (event.event) {
+      case 'data_reset':
+        return `Data reset (${dayjs(event.timestamp).format('HH:mm:ss')})`;
+      case 'new_prediction':
+        return `New prediction generated (${dayjs(event.timestamp).format('HH:mm:ss')})`;
+      default:
+        return `${event.event} event (${dayjs(event.timestamp).format('HH:mm:ss')})`;
+    }
+  };
 
   /**
    * Handle WebSocket notification event
@@ -112,6 +190,7 @@ export const DataProvider = ({ children }) => {
     socketService.on('disconnect', handleDisconnect);
     socketService.on('initialData', handleInitialData);
     socketService.on('dataUpdate', handleDataUpdate);
+    socketService.on('dataEvent', handleDataEvent);
     socketService.on('notification', handleNotification);
     
     // Subscribe to data updates
@@ -127,10 +206,11 @@ export const DataProvider = ({ children }) => {
       socketService.off('disconnect', handleDisconnect);
       socketService.off('initialData', handleInitialData);
       socketService.off('dataUpdate', handleDataUpdate);
+      socketService.off('dataEvent', handleDataEvent);
       socketService.off('notification', handleNotification);
       socketService.disconnect();
     };
-  }, [handleConnect, handleDisconnect, handleInitialData, handleDataUpdate, handleNotification, currentUser]);
+  }, [handleConnect, handleDisconnect, handleInitialData, handleDataUpdate, handleDataEvent, handleNotification, currentUser]);
   
   // Load data when current user changes
   useEffect(() => {
@@ -188,7 +268,8 @@ export const DataProvider = ({ children }) => {
       setMemoryData(prev => ({ ...prev, isLoading: true, error: null }));
       
       // Load both CPU and memory data in one request
-      const response = await apiService.getAllCombinedData(50, 120, currentUser.username);
+      // Always use 25 historical points and 60 prediction points
+      const response = await apiService.getAllCombinedData(25, 60, currentUser.username);
       
       // Update CPU data
       setCpuData({
@@ -213,13 +294,45 @@ export const DataProvider = ({ children }) => {
   };
 
   /**
-   * Run a prediction with the specified data file
-   * @param {string} dataFile - CSV data file name
+   * Reset user data
+   * @returns {Promise} - Promise result
+   */
+  const resetUserData = async () => {
+    if (!currentUser) {
+      throw new Error('No user selected');
+    }
+    
+    try {
+      // Call data reset API
+      const response = await apiService.resetData(currentUser.username);
+      
+      // Refresh data
+      if (response.status === 'success') {
+        loadInitialData();
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('Error resetting user data:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Run a prediction for the current user
    * @returns {Promise} - Promise with result
    */
-  const runPrediction = async (dataFile) => {
+  const runPrediction = async () => {
+    if (!currentUser) {
+      throw new Error('No user selected');
+    }
+    
     try {
-      const result = await apiService.runPrediction(dataFile);
+      const result = await apiService.runPrediction(currentUser);
+      
+      // Refresh data after prediction
+      loadInitialData();
+      
       return result;
     } catch (error) {
       console.error('Error running prediction:', error);
@@ -298,10 +411,12 @@ export const DataProvider = ({ children }) => {
     memoryData,
     connectionStatus,
     notifications,
+    dataWindow,
     runPrediction,
     importData,
     importSpecificFile,
-    refreshData: loadInitialData
+    refreshData: loadInitialData,
+    resetUserData
   };
 
   return (

@@ -41,7 +41,7 @@ class ApiService {
    * @param {string} username - Optional username to filter data
    * @returns {Promise} - Promise with data
    */
-  async getHistoricalData(limit = 50, username = null) {
+  async getHistoricalData(limit = 25, username = null) {
     try {
       const params = { limit };
       if (username) params.username = username;
@@ -61,7 +61,7 @@ class ApiService {
    * @param {string} username - Optional username to filter data
    * @returns {Promise} - Promise with both CPU and memory data
    */
-  async getAllCombinedData(historyLimit = 50, predictionLimit = 120, username = null) {
+  async getAllCombinedData(historyLimit = 25, predictionLimit = 60, username = null) {
     try {
       const params = { historyLimit, predictionLimit };
       if (username) params.username = username;
@@ -75,13 +75,13 @@ class ApiService {
   }
 
   /**
-   * Run a prediction on a specific data file
-   * @param {string} dataFile - Name of the data file
+   * Run a prediction for a specific user
+   * @param {string} currentUser - Current user
    * @returns {Promise} - Promise with result
    */
-  async runPrediction(dataFile) {
+  async runPrediction(currentUser) {
     try {
-      const response = await axios.post(`${API_URL}/predict`, { dataFile });
+      const response = await axios.post(`${API_URL}/predict`, { username: currentUser.username });
       return response.data;
     } catch (error) {
       console.error('Error running prediction:', error);
@@ -158,6 +158,25 @@ class ApiService {
       return response.data;
     } catch (error) {
       console.error('Error getting resource allocation:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Reset data for a specific user
+   * @param {string} username - Username 
+   * @param {boolean} runPrediction - Whether to run predictions after reset
+   * @returns {Promise} - Promise with results
+   */
+  async resetData(username, runPrediction = true) {
+    try {
+      const response = await axios.post(`${API_URL}/reset`, { 
+        username, 
+        runPrediction 
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error resetting data:', error);
       throw error;
     }
   }

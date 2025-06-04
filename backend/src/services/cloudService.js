@@ -1,9 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { promisify } = require('util');
+const dayjs = require('dayjs');
 const logger = require('../utils/logger');
-const db = require('../utils/db');
-const config = require('../config/config');
 
 // Try to use dotenv for local development if needed
 try {
@@ -88,7 +87,7 @@ class CloudService {
         apiKey,
         apiSecret,
         region,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: dayjs().toDate()
       };
       
       // Hash the sensitive data for storage
@@ -187,7 +186,7 @@ class CloudService {
         strategy,
         resources,
         thresholds,
-        applied: new Date().toISOString()
+        applied: dayjs().toDate()
       };
       
       const fileName = `${provider}-strategy.json`;
@@ -1051,7 +1050,7 @@ class CloudService {
    * @private
    */
   _mockCloudResponse(provider, operation) {
-    const timestamp = new Date().toISOString();
+    const timestamp = dayjs().toDate();
     
     switch (operation) {
       case 'auto':

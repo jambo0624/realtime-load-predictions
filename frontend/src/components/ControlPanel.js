@@ -21,11 +21,11 @@ const ControlPanel = () => {
   const isUserSelected = !!currentUser; 
 
   const { showSuccess, showError } = useNotification();
-  const [dataFile, setDataFile] = useState('c7_user_DrrEIEW_timeseries.csv');
+  const [dataFile, setDataFile] = useState('c7_user_DrrEIEW_timeseries.csv'); // Only used for import
   const [loading, setLoading] = useState(false);
   
   /**
-   * Run prediction with specified data file
+   * Run prediction for current user
    */
   const handleRunPrediction = async () => {
     if (!isUserSelected) {
@@ -33,15 +33,10 @@ const ControlPanel = () => {
       return;
     }
     
-    if (!dataFile) {
-      showError('Please enter a data file name');
-      return;
-    }
-    
     setLoading(true);
     
     try {
-      await runPrediction(dataFile, currentUser);
+      await runPrediction();
       showSuccess('Prediction completed successfully');
       refreshData(); // Refresh data after prediction
     } catch (err) {
@@ -110,9 +105,10 @@ const ControlPanel = () => {
             <h3>Run Prediction</h3>
             <ModelInfoPopover />
           </div>
+          
           <div className="input-row">
             <label>
-              Data File:
+              Import File:
               <input 
                 type="text" 
                 disabled={true}

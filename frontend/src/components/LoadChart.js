@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -11,7 +11,8 @@ import {
   Legend,
   TimeScale
 } from 'chart.js';
-import { format } from 'date-fns';
+import dayjs from 'dayjs';
+import { DataContext } from '../context/DataContext';
 
 // Register ChartJS components
 ChartJS.register(
@@ -28,9 +29,18 @@ ChartJS.register(
 /**
  * Chart component for displaying load data
  */
-const LoadChart = ({ historicalData = [], predictionData = [], target = 'cpu', height = 300, isUserSelected }) => {
+const LoadChart = ({ 
+  historicalData = [], 
+  predictionData = [], 
+  target = 'cpu', 
+  height = 300, 
+  isUserSelected 
+}) => {
   const [chartData, setChartData] = useState(null);
   const [maxValue, setMaxValue] = useState(0);
+  
+  // Get data window info
+  const { dataWindow } = useContext(DataContext);
   
   useEffect(() => {
     if (!historicalData?.length && !predictionData?.length) {
@@ -40,7 +50,7 @@ const LoadChart = ({ historicalData = [], predictionData = [], target = 'cpu', h
     // Prepare chart data
     prepareChartData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historicalData, predictionData, target]);
+  }, [historicalData, predictionData, target, dataWindow]);
   
   /**
    * Prepare chart data from historical and prediction data
@@ -49,24 +59,41 @@ const LoadChart = ({ historicalData = [], predictionData = [], target = 'cpu', h
     // Target column name
     const column = target === 'cpu' ? 'average_usage_cpu' : 'average_usage_memory';
     
-    // Format time labels
+    // Format time labels with time info
     const formatTime = (timestamp) => {
       if (!timestamp) return '';
-      const date = new Date(timestamp);
-      return format(date, 'HH:mm');
+      return dayjs(timestamp).format('HH:mm');
     };
     
-    // Extract data points
-    const historicalTimes = historicalData.map(item => formatTime(item.time_dt));
-    const historicalValues = historicalData.map(item => parseFloat(item[column] || 0));
+    // Extract data points and apply time window filtering
+    let historicalTimes = [];
+    let historicalValues = [];
+    let predictionTimes = [];
+    let predictionValues = [];
     
-    const predictionTimes = predictionData.map(item => formatTime(item.time_dt));
-    const predictionValues = predictionData.map(item => parseFloat(item[column] || 0));
+    // Handle historical data
+    if (historicalData && historicalData.length > 0) {
+      historicalTimes = historicalData.map(item => ({
+        time: dayjs(item.time_dt).toDate(),
+        label: formatTime(item.time_dt)
+      }));
+      historicalValues = historicalData.map(item => parseFloat(item[column] || 0));
+    }
+    
+    // Handle prediction data
+    if (predictionData && predictionData.length > 0) {
+      predictionTimes = predictionData.map(item => ({
+        time: dayjs(item.time_dt).toDate(),
+        label: formatTime(item.time_dt)
+      }));
+      predictionValues = predictionData.map(item => parseFloat(item[column] || 0));
+    }
     
     // Combine labels
-    const allLabels = [...historicalTimes, ...predictionTimes];
+    const allLabels = [...historicalTimes.map(t => t.label), ...predictionTimes.map(t => t.label)];
     const maxValue = Math.max(...historicalValues, ...predictionValues);
     setMaxValue(maxValue);
+    
     // Set chart data
     setChartData({
       labels: allLabels,
@@ -100,6 +127,9 @@ const LoadChart = ({ historicalData = [], predictionData = [], target = 'cpu', h
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    animation: {
+      duration: 600 // Smooth animation effect
+    },
     plugins: {
       legend: {
         position: 'top',
@@ -111,7 +141,23 @@ const LoadChart = ({ historicalData = [], predictionData = [], target = 'cpu', h
       tooltip: {
         mode: 'index',
         intersect: false,
-      }
+        displayColors: false,
+        callbacks: {
+          title: function(tooltipItems) {
+            return `Time: ${tooltipItems[0].label}`;
+          },
+          label: function(context) {
+            let label = context.dataset.label || '';
+            if (label) {
+              label += ': ';
+            }
+            if (context.raw !== null) {
+              label += context.raw.toFixed(4);
+            }
+            return label;
+          }
+        }
+      },
     },
     scales: {
       y: {

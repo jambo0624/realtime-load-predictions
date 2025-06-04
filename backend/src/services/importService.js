@@ -1,8 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
-const { Pool } = require('pg');
-const { pipeline } = require('stream');
+const dayjs = require('dayjs');
 const logger = require('../utils/logger');
 const db = require('../utils/db');
 const config = require('../config/config');
@@ -87,11 +86,12 @@ class ImportService {
    * Import CSV file into the database
    * @param {string} filePath - Path to the CSV file
    * @param {string} tableName - Name of the table to import into
+   * @param {boolean} updateOriginalData - Whether to also update original_historical_data
    * @returns {Promise<Object>} - Import results
    */
-  async importCsvToDb(filePath, tableName) {
+  async importCsvToDb(filePath, tableName, updateOriginalData = true) {
     const fileName = path.basename(filePath);
-    logger.info(`Starting import of ${filePath} into ${tableName}`);
+    logger.info(`Starting import of ${filePath} into ${tableName}${updateOriginalData ? ' and original_historical_data' : ''}`);
     
     try {
       // First scan to identify all users in the file
@@ -147,9 +147,11 @@ class ImportService {
         // Process a batch of records for a user
         const processBatch = async (username, userId, records) => {
           try {
-            await this.batchInsert(records, tableName, userId);
-            results.imported += records.length;
-            results.userStats[username].imported += records.length;
+            const { processedCount, skippedDuplicates } = await this.batchInsert(records, tableName, userId, updateOriginalData);
+            results.imported += processedCount;
+            results.skipped += skippedDuplicates;
+            results.userStats[username].imported += processedCount;
+            results.userStats[username].skipped += skippedDuplicates;
             return true;
           } catch (error) {
             logger.error(`Error processing batch for user ${username}:`, error);
@@ -266,8 +268,9 @@ class ImportService {
    * @param {Array} records - Array of records to insert
    * @param {string} tableName - Table name
    * @param {number} userId - User ID
+   * @param {boolean} updateOriginalData - Whether to also update original_historical_data
    */
-  async batchInsert(records, tableName, userId) {
+  async batchInsert(records, tableName, userId, updateOriginalData = true) {
     // Validate table name
     if (tableName !== 'historical_data' && tableName !== 'predictions') {
       throw new Error(`Invalid table name: ${tableName}`);
@@ -278,15 +281,19 @@ class ImportService {
     try {
       await client.query('BEGIN');
       
+      // Track processed timestamps to avoid duplicates within the same batch
+      const processedTimestamps = new Set();
+      let duplicateCount = 0;
+      
       for (const record of records) {
         // Process timestamp
         let timestamp;
         if (record.time_dt) {
-          timestamp = new Date(record.time_dt);
+          timestamp = dayjs(record.time_dt).toDate();
         } else if (record.timestamp) {
-          timestamp = new Date(record.timestamp);
+          timestamp = dayjs(record.timestamp).toDate();
         } else {
-          timestamp = new Date();
+          timestamp = dayjs().toDate();
         }
         
         // Check if timestamp is valid
@@ -294,6 +301,19 @@ class ImportService {
           logger.warn(`Invalid timestamp in record: ${JSON.stringify(record)}`);
           continue;
         }
+        
+        // Use dayjs to format timestamp, ensuring consistency
+        const minuteKey = dayjs(timestamp).format('YYYY-MM-DD HH:mm:00');
+
+        // Skip if we've already processed this exact timestamp in this batch
+        if (processedTimestamps.has(minuteKey)) {
+          logger.debug(`Skipping duplicate timestamp: ${minuteKey}`);
+          duplicateCount++;
+          continue; // This will skip to the next iteration of the for loop
+        }
+        
+        // Mark this timestamp as processed
+        processedTimestamps.add(minuteKey);
         
         const cpuValue = parseFloat(record.average_usage_cpu) || null;
         const memValue = parseFloat(record.average_usage_memory) || null;
@@ -307,21 +327,38 @@ class ImportService {
             (time_dt, average_usage_cpu, average_usage_memory, prediction_type, user_id) 
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (time_dt, user_id, prediction_type) DO NOTHING`,
-            [timestamp, cpuValue, memValue, predictionType, userId]
+            [minuteKey, cpuValue, memValue, predictionType, userId]
           );
         } else {
           // Historical data
+          await client.query(
+            `INSERT INTO historical_data 
+            (time_dt, average_usage_cpu, average_usage_memory, user_id) 
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (time_dt, user_id) DO NOTHING`,
+            [minuteKey, cpuValue, memValue, userId]
+          );
+          
+          // Also insert into original_historical_data if requested
+          if (updateOriginalData) {
             await client.query(
-              `INSERT INTO historical_data 
+              `INSERT INTO original_historical_data 
               (time_dt, average_usage_cpu, average_usage_memory, user_id) 
               VALUES ($1, $2, $3, $4)
               ON CONFLICT (time_dt, user_id) DO NOTHING`,
-              [timestamp, cpuValue, memValue, userId]
+              [minuteKey, cpuValue, memValue, userId]
             );
+          }
         }
       }
       
+      // Log the number of duplicates skipped
+      if (duplicateCount > 0) {
+        logger.info(`Skipped ${duplicateCount} records with duplicate timestamps during batch insert`);
+      }
+      
       await client.query('COMMIT');
+      return { processedCount: records.length - duplicateCount, skippedDuplicates: duplicateCount };
     } catch (err) {
       await client.query('ROLLBACK');
       logger.error('Error in batch insert:', err);
@@ -353,10 +390,11 @@ class ImportService {
   /**
    * Import all CSV files from a directory
    * @param {string} directory - Directory path
+   * @param {boolean} updateOriginalData - Whether to also update original_historical_data
    * @returns {Promise<Object>} - Import results
    */
-  async importAllCsvFiles(directory = config.dataPath) {
-    logger.info(`Importing all CSV files from ${directory}`);
+  async importAllCsvFiles(directory = config.dataPath, updateOriginalData = true) {
+    logger.info(`Importing all CSV files from ${directory}${updateOriginalData ? ' (updating original data)' : ''}`);
     
     try {
       const files = await this.getAvailableCsvFiles(directory);
@@ -370,7 +408,7 @@ class ImportService {
       
       for (const { fileName, filePath } of files) {
         try {
-          const importResult = await this.importCsvToDb(filePath, 'historical_data');
+          const importResult = await this.importCsvToDb(filePath, 'historical_data', updateOriginalData);
           
           if (importResult.imported > 0) {
             results.success++;
@@ -383,7 +421,8 @@ class ImportService {
             status: importResult.imported > 0 ? 'success' : 'skipped',
             imported: importResult.imported,
             skipped: importResult.skipped,
-            userStats: importResult.userStats
+            userStats: importResult.userStats,
+            updatedOriginalData: updateOriginalData
           });
         } catch (err) {
           results.failed++;
@@ -407,10 +446,11 @@ class ImportService {
    * Import a specific CSV file
    * @param {string} fileName - Name of the file to import
    * @param {string} directory - Directory path
+   * @param {boolean} updateOriginalData - Whether to also update original_historical_data
    * @returns {Promise<Object>} - Import results
    */
-  async importSpecificFile(fileName, directory = config.dataPath) {
-    logger.info(`Importing specific CSV file: ${fileName} from ${directory}`);
+  async importSpecificFile(fileName, directory = config.dataPath, updateOriginalData = true) {
+    logger.info(`Importing specific CSV file: ${fileName} from ${directory}${updateOriginalData ? ' (updating original data)' : ''}`);
     
     try {
       // Validate file name to prevent directory traversal
@@ -430,7 +470,7 @@ class ImportService {
         throw new Error(`File ${fileName} not found`);
       }
       
-      const importResult = await this.importCsvToDb(filePath, 'historical_data');
+      const importResult = await this.importCsvToDb(filePath, 'historical_data', updateOriginalData);
       
       const result = {
         success: importResult.imported > 0 ? 1 : 0,
@@ -441,7 +481,8 @@ class ImportService {
           status: importResult.imported > 0 ? 'success' : 'skipped',
           imported: importResult.imported,
           skipped: importResult.skipped,
-          userStats: importResult.userStats
+          userStats: importResult.userStats,
+          updatedOriginalData: updateOriginalData
         }]
       };
       

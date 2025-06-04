@@ -21,4 +21,7 @@ router.post('/users', dataController.createUser);
 // Prediction routes
 router.post('/predict', dataController.runPrediction);
 
+// Data management routes
+router.post('/reset', dataController.resetData);
+
 module.exports = router; 

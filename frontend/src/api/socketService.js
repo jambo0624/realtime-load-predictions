@@ -9,6 +9,7 @@ class SocketService {
     this.callbacks = {
       initialData: new Set(),
       dataUpdate: new Set(),
+      dataEvent: new Set(),
       notification: new Set(),
       connect: new Set(),
       disconnect: new Set(),
@@ -58,6 +59,11 @@ class SocketService {
     this.socket.on('dataUpdate', (data) => {
       console.log(`Data update received`);
       this.callbacks.dataUpdate.forEach(callback => callback(data));
+    });
+
+    this.socket.on('dataEvent', (event) => {
+      console.log(`Data event received: ${event.event}`);
+      this.callbacks.dataEvent.forEach(callback => callback(event));
     });
 
     this.socket.on('notification', (notification) => {

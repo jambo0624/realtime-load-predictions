@@ -1,4 +1,5 @@
 const socketIo = require('socket.io');
+const dayjs = require('dayjs');
 const logger = require('../utils/logger');
 const predictionService = require('./predictionService');
 const userService = require('../services/userService');
@@ -8,6 +9,8 @@ class WebsocketService {
     this.io = null;
     this.clients = new Set();
     this.updateInterval = null;
+    // Track the last time data was fetched
+    this.lastDataTimestamps = new Map();
   }
   
   /**
@@ -42,7 +45,8 @@ class WebsocketService {
     
     // Store user information for this socket
     socket.userData = {
-      username: null
+      username: null,
+      lastDataTimestamp: dayjs().toDate()
     };
     
     // Handle subscription
@@ -60,6 +64,15 @@ class WebsocketService {
       
       // Join room for this user
       socket.join(roomName);
+      
+      // Initialize last data timestamp for this user
+      const key = username || 'default';
+      if (!this.lastDataTimestamps.has(key)) {
+        this.lastDataTimestamps.set(key, {
+          lastRequestTime: dayjs().toDate(),
+          dataWindowStart: dayjs().subtract(1, 'hour').toDate() // 1 hour ago
+        });
+      }
       
       // Send initial data for this user
       await this.sendInitialData(socket, username);
@@ -91,14 +104,25 @@ class WebsocketService {
         }
       }
       
-      // Get CPU and memory data
-      const cpuData = await predictionService.getDataAndPredictions('cpu', 50, 120, userId);
-      const memoryData = await predictionService.getDataAndPredictions('memory', 50, 120, userId);
+      // Get CPU and memory data with sliding window
+      const key = username || 'default';
+      const timeInfo = this.lastDataTimestamps.get(key) || {
+        lastRequestTime: dayjs().toDate(),
+        dataWindowStart: dayjs().subtract(1, 'hour').toDate() // 1 hour ago
+      };
+      
+      // Save current request time
+      timeInfo.lastRequestTime = dayjs().toDate();
+      
+      // Get CPU and memory data - consistent with API defaults
+      const cpuData = await predictionService.getDataAndPredictions('cpu', 25, 60, userId);
+      const memoryData = await predictionService.getDataAndPredictions('memory', 25, 60, userId);
       
       // Send combined data
       socket.emit('initialData', { 
         cpu: cpuData,
-        memory: memoryData
+        memory: memoryData,
+        timestamp: timeInfo.lastRequestTime
       });
       
       logger.info(`Sent initial data to client ${socket.id}${username ? ` for user: ${username}` : ''}`);
@@ -111,8 +135,8 @@ class WebsocketService {
    * Start periodic data updates to all connected clients
    */
   startPeriodicUpdates() {
-    // Send updates every 10 seconds
-    const updateInterval = 10000;
+    // Send updates every 5 seconds
+    const updateInterval = 5000;
     
     this.updateInterval = setInterval(async () => {
       if (this.clients.size === 0) {
@@ -146,18 +170,40 @@ class WebsocketService {
             }
           }
           
-          // Get CPU and memory data for this user
-          const cpuData = await predictionService.getDataAndPredictions('cpu', 50, 120, userId);
-          const memoryData = await predictionService.getDataAndPredictions('memory', 50, 120, userId);
+          // Get time window information for this user/room
+          const key = username || 'default';
+          const timeInfo = this.lastDataTimestamps.get(key) || {
+            lastRequestTime: dayjs().toDate(),
+            dataWindowStart: dayjs().subtract(1, 'hour').toDate() // 1 hour ago
+          };
           
-          // Send combined data update
+          // Update the time window - slide forward by the elapsed time
+          const currentTime = dayjs().toDate();
+          const elapsedMs = dayjs(currentTime).diff(timeInfo.lastRequestTime);
+          
+          // Slide the window forward
+          if (elapsedMs > 0) {
+            timeInfo.dataWindowStart = dayjs(timeInfo.dataWindowStart).add(elapsedMs, 'millisecond').toDate();
+            timeInfo.lastRequestTime = currentTime;
+            
+            // Store updated time info
+            this.lastDataTimestamps.set(key, timeInfo);
+          }
+          
+          // Get CPU and memory data for this user with sliding window
+          // Use consistent history and prediction windows
+          const cpuData = await predictionService.getDataAndPredictions('cpu', 25, 60, userId);
+          const memoryData = await predictionService.getDataAndPredictions('memory', 25, 60, userId);
+          
+          // Send combined data update with current timestamp
           this.io.to(room).emit('dataUpdate', {
             cpu: cpuData,
             memory: memoryData,
-            timestamp: new Date()
+            timestamp: currentTime,
+            windowStartTime: timeInfo.dataWindowStart
           });
           
-          logger.debug(`Sent data update to room ${room}`);
+          logger.debug(`Sent data update to room ${room}, window start: ${timeInfo.dataWindowStart.toISOString()}`);
         }
         
         logger.debug(`Completed updates for ${this.clients.size} clients`);
@@ -170,6 +216,35 @@ class WebsocketService {
   }
   
   /**
+   * Notify clients about data updates
+   * @param {string} username - Username for filtering notifications (or 'system' for all)
+   * @param {string} event - Event type (e.g., 'data_reset', 'new_prediction')
+   * @param {Object} data - Additional data to send
+   */
+  notifyDataUpdate(username, event, data = {}) {
+    if (!this.io) return;
+    
+    if (username === 'system') {
+      // Broadcast to all clients
+      this.io.emit('dataEvent', { 
+        event,
+        data,
+        timestamp: dayjs().toDate()
+      });
+      logger.info(`Broadcast ${event} event to all clients`);
+    } else {
+      // Send to specific user room
+      const roomName = `user_${username}`;
+      this.io.to(roomName).emit('dataEvent', {
+        event,
+        data,
+        timestamp: dayjs().toDate()
+      });
+      logger.info(`Sent ${event} event to room ${roomName}`);
+    }
+  }
+  
+  /**
    * Stop periodic updates
    */
   stopPeriodicUpdates() {
@@ -177,18 +252,6 @@ class WebsocketService {
       clearInterval(this.updateInterval);
       this.updateInterval = null;
       logger.info('Stopped periodic updates');
-    }
-  }
-  
-  /**
-   * Send a notification to all connected clients
-   * @param {string} type - Notification type
-   * @param {Object} data - Notification data
-   */
-  broadcastNotification(type, data) {
-    if (this.io) {
-      this.io.emit('notification', { type, data, timestamp: new Date() });
-      logger.info(`Sent ${type} notification to all clients`);
     }
   }
   

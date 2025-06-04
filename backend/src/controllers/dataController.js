@@ -2,6 +2,8 @@ const logger = require('../utils/logger');
 const importService = require('../services/importService');
 const predictionService = require('../services/predictionService');
 const userService = require('../services/userService');
+const db = require('../utils/db');
+const websocketService = require('../services/websocketService');
 
 class DataController {
   /**
@@ -68,7 +70,7 @@ class DataController {
    */
   async getHistoricalData(req, res) {
     try {
-      const { target = 'cpu', limit = 100, username } = req.query;
+      const { target = 'cpu', limit = 50, username } = req.query;
       const column = target.toLowerCase() === 'cpu' 
         ? 'average_usage_cpu' 
         : 'average_usage_memory';
@@ -132,7 +134,7 @@ class DataController {
    */
   async getDataAndPredictions(req, res) {
     try {
-      const { target = 'cpu', historyLimit = 100, predictionLimit = 240, username } = req.query;
+      const { target = 'cpu', historyLimit = 50, predictionLimit = 120, username } = req.query;
       
       let userId = null;
       if (username) {
@@ -181,7 +183,7 @@ class DataController {
    */
   async getAllDataAndPredictions(req, res) {
     try {
-      const { historyLimit = 100, predictionLimit = 240, username } = req.query;
+      const { historyLimit = 50, predictionLimit = 120, username } = req.query;
       
       let userId = null;
       if (username) {
@@ -237,22 +239,35 @@ class DataController {
   }
   
   /**
-   * Run prediction for a specific data file
+   * Run prediction for a specific user
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
   async runPrediction(req, res) {
     try {
-      const { dataFile } = req.body;
+      const { username } = req.body;
       
-      if (!dataFile) {
-        return res.status(400).json({
-          status: 'error',
-          message: 'Data file is required'
-        });
+      // Get user ID
+      let userId = null;
+      if (username) {
+        const user = await userService.getUserByUsername(username);
+        if (user) {
+          userId = user.id;
+        } else {
+          return res.status(404).json({
+            status: 'error',
+            message: `User ${username} not found`
+          });
+        }
+      } else {
+        const defaultUser = await userService.getDefaultUser();
+        userId = defaultUser.id;
+        logger.info(`No username provided for prediction, using default system user (ID: ${userId})`);
       }
       
-      const result = await predictionService.runPrediction(dataFile);
+      // Run the prediction directly using database data
+      logger.info(`Starting prediction for user ${userId}...`);
+      const result = await predictionService.runPrediction(userId);
       
       res.status(200).json({
         status: 'success',
@@ -451,6 +466,75 @@ class DataController {
       res.status(500).json({
         status: 'error',
         message: 'Failed to create user',
+        error: err.message
+      });
+    }
+  }
+  
+  /**
+   * Reset data for a user - clear predictions and reset historical data
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async resetData(req, res) {
+    try {
+      const { username, runPrediction = true } = req.body;
+      
+      if (!username) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Username is required'
+        });
+      }
+      
+      // Get user by username
+      const user = await userService.getUserByUsername(username);
+      if (!user) {
+        return res.status(404).json({
+          status: 'error',
+          message: `User ${username} not found`
+        });
+      }
+      
+      const userId = user.id;
+      
+      // Step 1: Clear all predictions for this user
+      logger.info(`Clearing predictions for user ${userId}...`);
+      const clearResult = await db.clearPredictions(userId);
+      
+      // Step 2: Reset historical data from original historical data
+      logger.info(`Resetting historical data for user ${userId}...`);
+      const resetResult = await db.copyOriginalToHistorical(userId);
+      
+      let predictionResult = null;
+      // Step 3: Run prediction if requested
+      if (runPrediction) {
+        logger.info(`Running prediction for user ${userId}...`);
+        try {
+          predictionResult = await predictionService.runPrediction(userId);
+        } catch (predErr) {
+          logger.error(`Error running prediction for user ${userId}:`, predErr);
+          // Continue execution even if prediction fails
+        }
+      }
+      
+      // Notify connected clients about the data update
+      websocketService.notifyDataUpdate(username, 'data_reset');
+      
+      res.status(200).json({
+        status: 'success',
+        message: `Data reset successful for user ${username}`,
+        data: {
+          predictionsCleared: clearResult.count,
+          historicalDataReset: resetResult.count,
+          predictionResult: predictionResult
+        }
+      });
+    } catch (err) {
+      logger.error('Error resetting data:', err);
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to reset data',
         error: err.message
       });
     }
