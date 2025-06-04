@@ -183,7 +183,7 @@ class DataController {
    */
   async getAllDataAndPredictions(req, res) {
     try {
-      const { historyLimit = 50, predictionLimit = 120, username } = req.query;
+      const { historyLimit = 25, predictionLimit = 60, username } = req.query;
       
       let userId = null;
       if (username) {
@@ -221,11 +221,16 @@ class DataController {
         userId
       );
       
+      // Make sure we use the same reference time for both
+      const referenceTime = cpuResult.currentTime;
+      
       res.status(200).json({
         status: 'success',
         data: {
           cpu: cpuResult,
-          memory: memoryResult
+          memory: memoryResult,
+          hasPredictions: cpuResult.hasPredictions || memoryResult.hasPredictions,
+          referenceTime
         }
       });
     } catch (err) {

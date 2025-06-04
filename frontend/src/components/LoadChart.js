@@ -94,13 +94,32 @@ const LoadChart = ({
     const maxValue = Math.max(...historicalValues, ...predictionValues);
     setMaxValue(maxValue);
     
+    // Create datasets with connected lines
+    const historicalDataset = [...historicalValues, ...Array(predictionTimes.length).fill(null)];
+    
+    // For prediction dataset, use the last historical point as the first prediction point to connect lines
+    let predictionDataset;
+    if (historicalValues.length > 0 && predictionValues.length > 0) {
+      // Use last historical point to connect lines
+      const lastHistoricalValue = historicalValues[historicalValues.length - 1];
+      
+      // Create prediction dataset with overlap
+      predictionDataset = [
+        ...Array(historicalTimes.length - 1).fill(null), 
+        lastHistoricalValue,  // Add last historical point
+        ...predictionValues
+      ];
+    } else {
+      predictionDataset = [...Array(historicalTimes.length).fill(null), ...predictionValues];
+    }
+    
     // Set chart data
     setChartData({
       labels: allLabels,
       datasets: [
         {
           label: 'Historical Data',
-          data: [...historicalValues, ...Array(predictionTimes.length).fill(null)],
+          data: historicalDataset,
           borderColor: 'rgba(75, 192, 192, 1)',
           backgroundColor: 'rgba(75, 192, 192, 0.2)',
           pointRadius: 1,
@@ -110,7 +129,7 @@ const LoadChart = ({
         },
         {
           label: 'Predictions',
-          data: [...Array(historicalTimes.length).fill(null), ...predictionValues],
+          data: predictionDataset,
           borderColor: 'rgba(255, 99, 132, 1)',
           backgroundColor: 'rgba(255, 99, 132, 0.2)',
           pointRadius: 1,

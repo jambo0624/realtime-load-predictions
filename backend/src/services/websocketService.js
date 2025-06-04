@@ -9,8 +9,6 @@ class WebsocketService {
     this.io = null;
     this.clients = new Set();
     this.updateInterval = null;
-    // Track the last time data was fetched
-    this.lastDataTimestamps = new Map();
   }
   
   /**
@@ -45,8 +43,7 @@ class WebsocketService {
     
     // Store user information for this socket
     socket.userData = {
-      username: null,
-      lastDataTimestamp: dayjs().toDate()
+      username: null
     };
     
     // Handle subscription
@@ -64,15 +61,6 @@ class WebsocketService {
       
       // Join room for this user
       socket.join(roomName);
-      
-      // Initialize last data timestamp for this user
-      const key = username || 'default';
-      if (!this.lastDataTimestamps.has(key)) {
-        this.lastDataTimestamps.set(key, {
-          lastRequestTime: dayjs().toDate(),
-          dataWindowStart: dayjs().subtract(1, 'hour').toDate() // 1 hour ago
-        });
-      }
       
       // Send initial data for this user
       await this.sendInitialData(socket, username);
@@ -104,25 +92,21 @@ class WebsocketService {
         }
       }
       
-      // Get CPU and memory data with sliding window
-      const key = username || 'default';
-      const timeInfo = this.lastDataTimestamps.get(key) || {
-        lastRequestTime: dayjs().toDate(),
-        dataWindowStart: dayjs().subtract(1, 'hour').toDate() // 1 hour ago
-      };
-      
-      // Save current request time
-      timeInfo.lastRequestTime = dayjs().toDate();
-      
-      // Get CPU and memory data - consistent with API defaults
+      // Get CPU and memory data with consistent window
+      // Use standard settings: 25 history points, 60 prediction points
       const cpuData = await predictionService.getDataAndPredictions('cpu', 25, 60, userId);
       const memoryData = await predictionService.getDataAndPredictions('memory', 25, 60, userId);
+      
+      // Make sure we use the same reference time for both
+      const referenceTime = cpuData.currentTime;
       
       // Send combined data
       socket.emit('initialData', { 
         cpu: cpuData,
         memory: memoryData,
-        timestamp: timeInfo.lastRequestTime
+        timestamp: dayjs().toDate(),
+        referenceTime,
+        hasPredictions: cpuData.hasPredictions || memoryData.hasPredictions
       });
       
       logger.info(`Sent initial data to client ${socket.id}${username ? ` for user: ${username}` : ''}`);
@@ -170,40 +154,24 @@ class WebsocketService {
             }
           }
           
-          // Get time window information for this user/room
-          const key = username || 'default';
-          const timeInfo = this.lastDataTimestamps.get(key) || {
-            lastRequestTime: dayjs().toDate(),
-            dataWindowStart: dayjs().subtract(1, 'hour').toDate() // 1 hour ago
-          };
-          
-          // Update the time window - slide forward by the elapsed time
-          const currentTime = dayjs().toDate();
-          const elapsedMs = dayjs(currentTime).diff(timeInfo.lastRequestTime);
-          
-          // Slide the window forward
-          if (elapsedMs > 0) {
-            timeInfo.dataWindowStart = dayjs(timeInfo.dataWindowStart).add(elapsedMs, 'millisecond').toDate();
-            timeInfo.lastRequestTime = currentTime;
-            
-            // Store updated time info
-            this.lastDataTimestamps.set(key, timeInfo);
-          }
-          
-          // Get CPU and memory data for this user with sliding window
-          // Use consistent history and prediction windows
+          // Get CPU and memory data for this user with consistent window settings
           const cpuData = await predictionService.getDataAndPredictions('cpu', 25, 60, userId);
           const memoryData = await predictionService.getDataAndPredictions('memory', 25, 60, userId);
           
-          // Send combined data update with current timestamp
+          // Make sure we use the same reference time for both
+          const referenceTime = cpuData.currentTime;
+          const currentTime = dayjs().toDate();
+          
+          // Send combined data update
           this.io.to(room).emit('dataUpdate', {
             cpu: cpuData,
             memory: memoryData,
             timestamp: currentTime,
-            windowStartTime: timeInfo.dataWindowStart
+            referenceTime,
+            hasPredictions: cpuData.hasPredictions || memoryData.hasPredictions
           });
           
-          logger.debug(`Sent data update to room ${room}, window start: ${timeInfo.dataWindowStart.toISOString()}`);
+          logger.debug(`Sent data update to room ${room}`);
         }
         
         logger.debug(`Completed updates for ${this.clients.size} clients`);

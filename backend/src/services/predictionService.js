@@ -900,85 +900,169 @@ class PredictionService {
   async getDataAndPredictions(target = 'cpu', historyLimit = 25, predictionLimit = 60, userId = null) {
     try {
       const column = target === 'cpu' ? 'average_usage_cpu' : 'average_usage_memory';
-      const currentTime = dayjs().toDate();
       
-      // Get historical data - before current time
-      let historyQuery;
-      let historyParams;
+      // Create a reference time based on 1970-02-01 + current time of day (HH:MM:SS)
+      const now = new Date();
+      const referenceTime = new Date(1970, 1, 1, now.getHours(), now.getMinutes(), now.getSeconds());
       
-      if (userId) {
-        historyQuery = `
-          SELECT time_dt, ${column}
-          FROM historical_data
-          WHERE ${column} IS NOT NULL AND user_id = $1 AND time_dt <= $2
-          ORDER BY time_dt DESC
-          LIMIT $3
-        `;
-        historyParams = [userId, currentTime, historyLimit];
-      } else {
-        historyQuery = `
-          SELECT time_dt, ${column}
-          FROM historical_data
-          WHERE ${column} IS NOT NULL AND time_dt <= $2
-          ORDER BY time_dt DESC
-          LIMIT $1
-        `;
-        historyParams = [historyLimit, currentTime];
+      logger.info(`Using reference time ${referenceTime.toISOString()} for data window`);
+      
+      // Verify userId exists and is valid
+      if (userId === null) {
+        logger.warn("No userId provided, returning empty result");
+        return {
+          historical: [],
+          predictions: [],
+          currentTime: referenceTime,
+          hasPredictions: false
+        };
       }
       
-      const historyResult = await db.query(historyQuery, historyParams);
+      // First check if user has any predictions
+      const { rows: predictionCount } = await db.query(
+        `SELECT COUNT(*) FROM predictions WHERE user_id = $1 AND ${column} IS NOT NULL`,
+        [userId]
+      );
       
-      // Get predictions - using sequence_idx as primary sort key
-      let predictionsQuery;
-      let predictionsParams;
+      const hasPredictions = parseInt(predictionCount[0]?.count || '0') > 0;
       
-      if (userId) {
-        // Get the most recent prediction type for this user
-        const typeResult = await db.query(
-          `SELECT DISTINCT prediction_type 
-           FROM predictions
-           WHERE user_id = $1 
-           ORDER BY prediction_type
-           LIMIT 1`,
-          [userId]
-        );
+      if (!hasPredictions) {
+        // Case 1: No predictions - get most recent 85 historical records
+        logger.info(`No predictions found for user ${userId}, fetching ${historyLimit + predictionLimit} historical records`);
         
-        const predictionType = typeResult.rows.length > 0 ? typeResult.rows[0].prediction_type : 'xgboost';
+        const historyQuery = `
+          SELECT time_dt, ${column}
+          FROM historical_data
+          WHERE ${column} IS NOT NULL AND user_id = $1
+          ORDER BY time_dt DESC
+          LIMIT $2
+        `;
+        const historyParams = [userId, historyLimit + predictionLimit];
         
-        predictionsQuery = `
+        const historyResult = await db.query(historyQuery, historyParams);
+        
+        // If no historical data, try to get from original_historical_data
+        if (historyResult.rows.length === 0) {
+          logger.info(`No historical data found for user ${userId}, checking original_historical_data`);
+          
+          const origHistoryQuery = `
+            SELECT time_dt, ${column}
+            FROM original_historical_data
+            WHERE ${column} IS NOT NULL AND user_id = $1
+            ORDER BY time_dt DESC
+            LIMIT $2
+          `;
+          
+          const origHistoryResult = await db.query(origHistoryQuery, [userId, historyLimit + predictionLimit]);
+          
+          return {
+            historical: origHistoryResult.rows.reverse(), // Return in chronological order
+            predictions: [],
+            currentTime: referenceTime,
+            hasPredictions: false
+          };
+        }
+        
+        return {
+          historical: historyResult.rows.reverse(), // Return in chronological order
+          predictions: [],
+          currentTime: referenceTime,
+          hasPredictions: false
+        };
+      } else {
+        // Case 2: Has predictions - use reference time to split data
+        logger.info(`Predictions found for user ${userId}, fetching data around reference time`);
+        
+        // Get predictions before reference time (for history)
+        const historyPredQuery = `
           SELECT time_dt, ${column}, prediction_type, sequence_idx
           FROM predictions
           WHERE ${column} IS NOT NULL 
-            AND user_id = $1 
-            AND prediction_type = $2
-          ORDER BY sequence_idx ASC
+            AND user_id = $1
+            AND time_dt <= $2
+          ORDER BY time_dt DESC
           LIMIT $3
         `;
-        predictionsParams = [userId, predictionType, predictionLimit];
-      } else {
-        predictionsQuery = `
+        const historyPredParams = [userId, referenceTime, historyLimit];
+        
+        const historyPredResult = await db.query(historyPredQuery, historyPredParams);
+        
+        // Check if we need to supplement with original historical data
+        let combinedHistory = historyPredResult.rows.reverse(); // Chronological order
+        
+        if (combinedHistory.length < historyLimit) {
+          const neededRecords = historyLimit - combinedHistory.length;
+          logger.info(`Need ${neededRecords} more historical records to complete window`);
+          
+          const oldestPredTime = combinedHistory.length > 0 ? combinedHistory[0].time_dt : referenceTime;
+          
+          // Get additional records from original_historical_data
+          const origHistoryQuery = `
+            SELECT time_dt, ${column}
+            FROM original_historical_data
+            WHERE ${column} IS NOT NULL 
+              AND user_id = $1
+              AND time_dt < $2
+            ORDER BY time_dt DESC
+            LIMIT $3
+          `;
+          const origHistoryParams = [userId, oldestPredTime, neededRecords];
+          
+          const origHistoryResult = await db.query(origHistoryQuery, origHistoryParams);
+          
+          // Combine original history with prediction history
+          combinedHistory = [...origHistoryResult.rows.reverse(), ...combinedHistory];
+          
+          // If still not enough, try historical data as well
+          if (combinedHistory.length < historyLimit) {
+            const stillNeeded = historyLimit - combinedHistory.length;
+            logger.info(`Still need ${stillNeeded} more historical records`);
+            
+            const oldestTime = combinedHistory.length > 0 ? combinedHistory[0].time_dt : referenceTime;
+            
+            const regHistoryQuery = `
+              SELECT time_dt, ${column}
+              FROM historical_data
+              WHERE ${column} IS NOT NULL 
+                AND user_id = $1
+                AND time_dt < $2
+              ORDER BY time_dt DESC
+              LIMIT $3
+            `;
+            
+            const regHistoryResult = await db.query(regHistoryQuery, [userId, oldestTime, stillNeeded]);
+            
+            combinedHistory = [...regHistoryResult.rows.reverse(), ...combinedHistory];
+          }
+        }
+        
+        // Get predictions after reference time (for future)
+        const futurePredQuery = `
           SELECT time_dt, ${column}, prediction_type, sequence_idx
           FROM predictions
           WHERE ${column} IS NOT NULL 
-          ORDER BY sequence_idx ASC
-          LIMIT $1
+            AND user_id = $1
+            AND time_dt > $2
+          ORDER BY time_dt ASC
+          LIMIT $3
         `;
-        predictionsParams = [predictionLimit];
+        const futurePredParams = [userId, referenceTime, predictionLimit];
+        
+        const futurePredResult = await db.query(futurePredQuery, futurePredParams);
+        
+        // Add the step field for debugging
+        const futureData = futurePredResult.rows.map(row => ({
+          ...row,
+          step: row.sequence_idx ? Math.floor(row.sequence_idx / 1000) + 1 : undefined
+        }));
+        
+        return {
+          historical: combinedHistory,
+          predictions: futureData,
+          currentTime: referenceTime,
+          hasPredictions: true
+        };
       }
-      
-      const predictionsResult = await db.query(predictionsQuery, predictionsParams);
-      
-      // Add the sequence index as a field in the result for debugging
-      const predictions = predictionsResult.rows.map(row => ({
-        ...row,
-        step: Math.floor(row.sequence_idx / 1000) + 1
-      }));
-      
-      return {
-        historical: historyResult.rows.reverse(), // Return in chronological order
-        predictions: predictions,
-        currentTime: currentTime
-      };
     } catch (error) {
       logger.error(`Error fetching ${target} data and predictions:`, error);
       throw error;
