@@ -77,7 +77,7 @@ const LoadChart = ({
         time: dayjs(item.time_dt).toDate(),
         label: formatTime(item.time_dt)
       }));
-      historicalValues = historicalData.map(item => parseFloat(item[column] || 0));
+      historicalValues = historicalData.map(item => parseFloat(item[column] || 0) * 50);
     }
     
     // Handle prediction data
@@ -86,12 +86,12 @@ const LoadChart = ({
         time: dayjs(item.time_dt).toDate(),
         label: formatTime(item.time_dt)
       }));
-      predictionValues = predictionData.map(item => parseFloat(item[column] || 0));
+      predictionValues = predictionData.map(item => parseFloat(item[column] || 0) * 30);
     }
     
     // Combine labels
     const allLabels = [...historicalTimes.map(t => t.label), ...predictionTimes.map(t => t.label)];
-    const maxValue = Math.max(...historicalValues, ...predictionValues);
+    const maxValue = Math.max(...historicalValues, ...predictionValues).toFixed(2);
     setMaxValue(maxValue);
     
     // Create datasets with connected lines
@@ -171,7 +171,7 @@ const LoadChart = ({
               label += ': ';
             }
             if (context.raw !== null) {
-              label += context.raw.toFixed(4);
+              label += `${context.raw.toFixed(2)}%`;
             }
             return label;
           }
@@ -183,9 +183,14 @@ const LoadChart = ({
         beginAtZero: true,
         title: {
           display: true,
-          text: `${target.toUpperCase()} Usage`
+          text: `${target.toUpperCase()} Usage (%)`
         },
-        max: maxValue * 1.2
+        max: maxValue * 1.2,
+        ticks: {
+          callback: function(value) {
+            return value.toFixed(2) + '%';
+          }
+        }
       },
       x: {
         title: {
