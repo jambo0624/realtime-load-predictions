@@ -46,7 +46,7 @@ const ResourceManagement = ({ isUserSelected = false }) => {
         region
       });
       
-      showSuccess('Cloud credentials saved successfully');
+      showSuccess(response.message);
     } catch (err) {
       showError(err.message || 'Error saving credentials');
     } finally {
@@ -83,7 +83,7 @@ const ResourceManagement = ({ isUserSelected = false }) => {
       // Here we need to add backend API call
       const response = await apiService.applyResourceStrategy(strategyData);
       
-      showSuccess('Resource strategy applied successfully');
+      showSuccess(response.message);
     } catch (err) {
       showError(err.message || 'Error applying resource strategy');
     } finally {
