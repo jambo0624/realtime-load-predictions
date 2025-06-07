@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api/data';
+const CLOUD_API_URL = process.env.REACT_APP_CLOUD_API_URL || 'http://localhost:8080/api/cloud';
 
 /**
  * API service for communicating with the backend
@@ -125,7 +126,7 @@ class ApiService {
    */
   async saveCloudCredentials(credentials) {
     try {
-      const response = await axios.post(`${API_URL}/api/cloud/credentials`, credentials);
+      const response = await axios.post(`${CLOUD_API_URL}/credentials`, credentials);
       return response.data;
     } catch (error) {
       console.error('Error saving cloud credentials:', error);
@@ -140,7 +141,7 @@ class ApiService {
    */
   async applyResourceStrategy(strategyData) {
     try {
-      const response = await axios.post(`${API_URL}/api/cloud/resource-strategy`, strategyData);
+      const response = await axios.post(`${CLOUD_API_URL}/resource-strategy`, strategyData);
       return response.data;
     } catch (error) {
       console.error('Error applying resource strategy:', error);
@@ -154,7 +155,7 @@ class ApiService {
    */
   async getResourceAllocation() {
     try {
-      const response = await axios.get(`${API_URL}/api/cloud/resources`);
+      const response = await axios.get(`${CLOUD_API_URL}/resources`);
       return response.data;
     } catch (error) {
       console.error('Error getting resource allocation:', error);

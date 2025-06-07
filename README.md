@@ -45,8 +45,8 @@ The ML engine generates predictions for both CPU and memory usage using XGBoost 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │                 │    │                  │    │                 │
-│  ML Engine      │◄───┤  Backend API     │◄───┤  Frontend       │
-│ (Python/XGBoost)│    │ (Node.js/Express)│    │  (React)        │
+│  ML Engine      │◄───┤  Backend API     │◄───┤    Frontend     │
+│ (Python/XGBoost)│    │ (Node.js/Express)│    │    (React)      │
 │                 │───►│                  │───►│                 │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
         │                       │                       │
@@ -151,10 +151,10 @@ pnpm start
 
 ```
 realtime-load-predictions/
-├── backend/              # Node.js/Express backend
-├── frontend/             # React frontend
-└── ml_engine/           # Python ML prediction scripts
-    ├── data/            # Raw data files
+├── backend/                # Node.js/Express backend
+├── frontend/               # React frontend
+└── ml_engine/              # Python ML prediction scripts
+    ├── data/               # Raw data files
     ├── models/          # Trained models
     ├── prediction/      # Prediction scripts
     ├── prediction_results/ # Generated predictions

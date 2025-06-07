@@ -11,12 +11,25 @@ try {
   // Ignore if dotenv is not installed
 }
 
-// Optional: AWS SDK
-let AWS;
+// Optional: AWS SDK v3
+let awsServices = {};
 try {
-  AWS = require('aws-sdk');
+  // Import AWS SDK v3 core modules
+  awsServices.config = require('@aws-sdk/config-resolver');
+  awsServices.credentials = require('@aws-sdk/credential-provider-node');
+  
+  // Import AWS service clients
+  awsServices.EC2Client = require('@aws-sdk/client-ec2').EC2Client;
+  awsServices.EKSClient = require('@aws-sdk/client-eks').EKSClient;
+  awsServices.AutoScalingClient = require('@aws-sdk/client-auto-scaling').AutoScalingClient;
+  
+  // Import AWS commands
+  awsServices.ec2Commands = require('@aws-sdk/client-ec2');
+  awsServices.eksCommands = require('@aws-sdk/client-eks');
+  awsServices.autoScalingCommands = require('@aws-sdk/client-auto-scaling');
 } catch (err) {
-  logger.warn('AWS SDK not installed. AWS provider functionality will be limited.');
+  logger.warn('AWS SDK v3 not installed. AWS provider functionality will be limited.');
+  logger.debug(err.message);
 }
 
 // Optional: Google Cloud SDK
@@ -90,8 +103,6 @@ class CloudService {
         lastUpdated: dayjs().toDate()
       };
       
-      // Hash the sensitive data for storage
-      // TODO: use proper encryption for sensitive data
       const fileName = `${provider}-credentials.json`;
       const filePath = path.join(this.credentialsDir, fileName);
       
@@ -378,21 +389,31 @@ class CloudService {
   async _initializeProviderClient(provider, credentials) {
     switch (provider) {
       case 'aws':
-        if (AWS) {
-          // Configure AWS SDK
-          AWS.config.update({
-            accessKeyId: credentials.apiKey,
-            secretAccessKey: credentials.apiSecret,
-            region: credentials.region
-          });
+        if (awsServices.EC2Client) {
+          logger.info('Initializing AWS SDK v3 clients');
           
-          // FIXME: maybe get current resources from the cloud provider first
-          // Initialize common AWS services
-          this.awsClients.ec2 = new AWS.EC2();
-          this.awsClients.eks = new AWS.EKS();
-          this.awsClients.autoscaling = new AWS.AutoScaling();
+          // Configure AWS SDK v3 credentials
+          const clientConfig = {
+            region: credentials.region,
+            credentials: {
+              accessKeyId: credentials.apiKey,
+              secretAccessKey: credentials.apiSecret,
+            }
+          };
+          
+          // Initialize AWS clients using v3 SDK
+          this.awsClients.ec2 = new awsServices.EC2Client(clientConfig);
+          this.awsClients.eks = new awsServices.EKSClient(clientConfig);
+          this.awsClients.autoscaling = new awsServices.AutoScalingClient(clientConfig);
+          
+          // Store commands for later use
+          this.awsClients.ec2Commands = awsServices.ec2Commands;
+          this.awsClients.eksCommands = awsServices.eksCommands;
+          this.awsClients.autoScalingCommands = awsServices.autoScalingCommands;
+          
+          logger.info('AWS SDK v3 clients initialized successfully');
         } else {
-          logger.warn('AWS SDK not installed. AWS functionality will be limited.');
+          logger.warn('AWS SDK v3 not installed. AWS functionality will be limited.');
         }
         break;
         
@@ -491,7 +512,7 @@ class CloudService {
    * @private
    */
   async _applyAwsStrategy(strategy, resources, thresholds) {
-    if (!AWS) {
+    if (!this.awsClients.ec2) {
       return this._mockCloudResponse('aws', strategy);
     }
     
@@ -528,13 +549,19 @@ class CloudService {
    * @private
    */
   async _getAwsResources() {
-    if (!AWS) {
+    if (!this.awsClients.ec2) {
       return this._mockCloudResponse('aws', 'resources');
     }
     
     try {
-      // In a real implementation, this would call AWS APIs
-      // to get current resource usage
+      // Example of using AWS SDK v3 to describe instances
+      // const command = new this.awsClients.ec2Commands.DescribeInstancesCommand({});
+      // const response = await this.awsClients.ec2.send(command);
+      
+      // In a real implementation, this would process the response
+      // and return actual resource usage
+      
+      // For now, return a mock response
       return this._mockCloudResponse('aws', 'resources');
     } catch (error) {
       logger.error('Error getting AWS resources:', error);
@@ -550,13 +577,21 @@ class CloudService {
    * @private
    */
   async _scaleAwsResources(resourceType, amount) {
-    if (!AWS) {
+    if (!this.awsClients.ec2) {
       return this._mockCloudResponse('aws', 'scale');
     }
     
     try {
-      // In a real implementation, this would call AWS APIs
-      // to scale resources
+      // Example of using AWS SDK v3 to update an Auto Scaling group
+      // if (resourceType === 'instances') {
+      //   const command = new this.awsClients.autoScalingCommands.UpdateAutoScalingGroupCommand({
+      //     AutoScalingGroupName: 'my-asg',
+      //     DesiredCapacity: amount
+      //   });
+      //   await this.awsClients.autoscaling.send(command);
+      // }
+      
+      // For now, return a mock response
       return this._mockCloudResponse('aws', 'scale');
     } catch (error) {
       logger.error('Error scaling AWS resources:', error);
@@ -574,13 +609,23 @@ class CloudService {
    * @private
    */
   async _createAwsCluster(name, nodeCount, nodeType, region) {
-    if (!AWS) {
+    if (!this.awsClients.eks) {
       return this._mockCloudResponse('aws', 'cluster');
     }
     
     try {
-      // In a real implementation, this would call AWS EKS APIs
-      // to create a new cluster
+      // Example of using AWS SDK v3 to create an EKS cluster
+      // const command = new this.awsClients.eksCommands.CreateClusterCommand({
+      //   name,
+      //   roleArn: 'arn:aws:iam::123456789012:role/eks-service-role',
+      //   resourcesVpcConfig: {
+      //     subnetIds: ['subnet-abcdef12', 'subnet-34567890']
+      //   },
+      //   version: '1.24'
+      // });
+      // await this.awsClients.eks.send(command);
+      
+      // For now, return a mock response
       return this._mockCloudResponse('aws', 'cluster');
     } catch (error) {
       logger.error('Error creating AWS cluster:', error);
@@ -594,13 +639,17 @@ class CloudService {
    * @private
    */
   async _getAwsClusters() {
-    if (!AWS) {
+    if (!this.awsClients.eks) {
       return this._mockCloudResponse('aws', 'clusters');
     }
     
     try {
-      // In a real implementation, this would call AWS EKS APIs
-      // to get clusters
+      // Example of using AWS SDK v3 to list EKS clusters
+      // const command = new this.awsClients.eksCommands.ListClustersCommand({});
+      // const response = await this.awsClients.eks.send(command);
+      // const clusterNames = response.clusters;
+      
+      // For now, return a mock response
       return this._mockCloudResponse('aws', 'clusters');
     } catch (error) {
       logger.error('Error getting AWS clusters:', error);

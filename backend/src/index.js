@@ -1,12 +1,12 @@
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
-const path = require('path');
 const schedule = require('node-schedule');
 const config = require('./config/config');
 const logger = require('./utils/logger');
 const db = require('./utils/db');
 const dataRoutes = require('./routes/dataRoutes');
+const cloudRoutes = require('./routes/cloudRoutes');
 const websocketService = require('./services/websocketService');
 const predictionService = require('./services/predictionService');
 
@@ -25,6 +25,7 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/api/data', dataRoutes);
+app.use('/api/cloud', cloudRoutes); 
 
 // Health check endpoint
 app.get('/health', (req, res) => {

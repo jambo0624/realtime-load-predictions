@@ -38,7 +38,6 @@ const ResourceManagement = ({ isUserSelected = false }) => {
     setLoading(true);
     
     try {
-      // Here we need to add backend API call
       const response = await apiService.saveCloudCredentials({
         provider: cloudProvider,
         apiKey,
@@ -157,7 +156,7 @@ const ResourceManagement = ({ isUserSelected = false }) => {
               <label>
                 API Key:
                 <input 
-                  type="password" 
+                  type="input" 
                   value={apiKey} 
                   onChange={(e) => setApiKey(e.target.value)} 
                   placeholder="Enter your API key"
