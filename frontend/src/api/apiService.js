@@ -120,16 +120,56 @@ class ApiService {
   }
 
   /**
-   * Save cloud provider credentials
-   * @param {Object} credentials - Cloud provider credentials
+   * Save AWS account with IAM role
+   * @param {Object} accountData - AWS account data
+   * @param {number} accountData.userId - User ID
+   * @param {string} accountData.accountId - AWS Account ID
+   * @param {string} accountData.roleArn - IAM Role ARN
+   * @param {string} accountData.externalId - External ID (optional)
+   * @param {string[]} accountData.regions - AWS regions to monitor
    * @returns {Promise} - Promise with result
    */
-  async saveCloudCredentials(credentials) {
+  async saveAwsAccount(accountData) {
     try {
-      const response = await axios.post(`${CLOUD_API_URL}/credentials`, credentials);
+      const response = await axios.post(`${CLOUD_API_URL}/credentials`, accountData);
       return response.data;
     } catch (error) {
-      console.error('Error saving cloud credentials:', error);
+      console.error('Error saving AWS account:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get AWS accounts for a user
+   * @param {number} userId - User ID
+   * @returns {Promise} - Promise with result
+   */
+  async getAwsAccounts(userId) {
+    try {
+      const response = await axios.get(`${CLOUD_API_URL}/credentials`, { 
+        params: { userId } 
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error getting AWS accounts:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Delete an AWS account
+   * @param {number} accountId - AWS account ID to delete
+   * @param {number} userId - User ID
+   * @returns {Promise} - Promise with result
+   */
+  async deleteAwsAccount(accountId, userId) {
+    try {
+      const response = await axios.delete(`${CLOUD_API_URL}/credentials`, { 
+        data: { accountId, userId } 
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error deleting AWS account:', error);
       throw error;
     }
   }

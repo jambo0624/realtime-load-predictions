@@ -2,64 +2,106 @@ const logger = require('../utils/logger');
 const cloudService = require('../services/cloudService');
 
 /**
- * Cloud controller for managing cloud provider resources
+ * Cloud controller for managing AWS resources
  */
 class CloudController {
   /**
-   * Save cloud provider credentials
+   * Save AWS account with IAM role
    * @param {Object} req - Request object
    * @param {Object} res - Response object
    */
   async saveCredentials(req, res) {
     try {
-      const { provider, apiKey, apiSecret, region } = req.body;
+      const { userId, accountId, roleArn, externalId, regions } = req.body;
       
       // Validate required fields
-      if (!provider || !apiKey || !apiSecret) {
+      if (!userId || !accountId || !roleArn || !regions) {
         return res.status(400).json({
           status: 'error',
-          message: 'Provider, API key and secret are required'
+          message: 'User ID, AWS account ID, IAM role ARN and regions are required'
         });
       }
       
-      // Save credentials
-      const result = await cloudService.saveCredentials(provider, apiKey, apiSecret, region);
+      // Save AWS account with IAM role
+      const result = await cloudService.saveAwsAccount(userId, accountId, roleArn, externalId, regions);
       
       res.json({
         status: 'success',
-        message: 'Cloud credentials saved successfully',
-        data: result
+        message: result.updated 
+          ? 'AWS account updated successfully' 
+          : 'AWS account created successfully',
+        data: result.account
       });
     } catch (error) {
-      logger.error('Error saving cloud credentials:', error);
+      logger.error('Error saving AWS account:', error);
       
       res.status(500).json({
         status: 'error',
-        message: error.message || 'Failed to save credentials'
+        message: error.message || 'Failed to save AWS account'
       });
     }
   }
   
   /**
-   * Get cloud provider credentials
+   * Get AWS accounts for a user
    * @param {Object} req - Request object
    * @param {Object} res - Response object
    */
   async getCredentials(req, res) {
     try {
-      const provider = req.query.provider;
-      const credentials = await cloudService.getCredentials(provider);
+      const userId = parseInt(req.query.userId);
+      
+      if (!userId) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'User ID is required'
+        });
+      }
+      
+      const result = await cloudService.getAwsAccounts(userId);
       
       res.json({
         status: 'success',
-        data: credentials
+        data: result.accounts
       });
     } catch (error) {
-      logger.error('Error retrieving cloud credentials:', error);
+      logger.error('Error retrieving AWS accounts:', error);
       
       res.status(500).json({
         status: 'error',
-        message: error.message || 'Failed to retrieve credentials'
+        message: error.message || 'Failed to retrieve AWS accounts'
+      });
+    }
+  }
+  
+  /**
+   * Delete an AWS account
+   * @param {Object} req - Request object
+   * @param {Object} res - Response object
+   */
+  async deleteAwsAccount(req, res) {
+    try {
+      const { accountId, userId } = req.body;
+      
+      if (!accountId || !userId) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Account ID and user ID are required'
+        });
+      }
+      
+      const result = await cloudService.deleteAwsAccount(accountId, userId);
+      
+      res.json({
+        status: 'success',
+        message: 'AWS account deleted successfully'
+      });
+    } catch (error) {
+      logger.error('Error deleting AWS account:', error);
+      
+      res.status(500).json({
+        status: 'error',
+        message: error.message || 'Failed to delete AWS account'
       });
     }
   }
@@ -71,18 +113,18 @@ class CloudController {
    */
   async applyResourceStrategy(req, res) {
     try {
-      const { provider, strategy, resources, thresholds } = req.body;
+      const { strategy, resources, thresholds, accountId, region } = req.body;
       
       // Validate required fields
-      if (!provider || !strategy) {
+      if (!strategy || !accountId || !region) {
         return res.status(400).json({
           status: 'error',
-          message: 'Provider and strategy are required'
+          message: 'Strategy, AWS account ID and region are required'
         });
       }
       
       // Apply resource strategy
-      const result = await cloudService.applyResourceStrategy(provider, strategy, resources, thresholds);
+      const result = await cloudService.applyResourceStrategy(strategy, resources, thresholds, accountId, region);
       
       res.json({
         status: 'success',
@@ -106,8 +148,17 @@ class CloudController {
    */
   async getResources(req, res) {
     try {
-      const provider = req.query.provider;
-      const resources = await cloudService.getResources(provider);
+      const accountId = parseInt(req.query.accountId);
+      const region = req.query.region;
+      
+      if (!accountId || !region) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'AWS account ID and region are required'
+        });
+      }
+      
+      const resources = await cloudService.getResources(accountId, region);
       
       res.json({
         status: 'success',
@@ -130,18 +181,18 @@ class CloudController {
    */
   async scaleResources(req, res) {
     try {
-      const { provider, resourceType, amount } = req.body;
+      const { resourceType, amount, accountId, region } = req.body;
       
       // Validate required fields
-      if (!provider || !resourceType || amount === undefined) {
+      if (!resourceType || amount === undefined || !accountId || !region) {
         return res.status(400).json({
           status: 'error',
-          message: 'Provider, resource type and amount are required'
+          message: 'Resource type, amount, AWS account ID and region are required'
         });
       }
       
       // Scale resources
-      const result = await cloudService.scaleResources(provider, resourceType, amount);
+      const result = await cloudService.scaleResources(resourceType, amount, accountId, region);
       
       res.json({
         status: 'success',
@@ -165,18 +216,18 @@ class CloudController {
    */
   async createCluster(req, res) {
     try {
-      const { provider, name, nodeCount, nodeType, region } = req.body;
+      const { name, nodeCount, nodeType, accountId, region } = req.body;
       
       // Validate required fields
-      if (!provider || !name || !nodeCount || !nodeType) {
+      if (!name || !nodeCount || !nodeType || !accountId || !region) {
         return res.status(400).json({
           status: 'error',
-          message: 'Provider, name, node count and node type are required'
+          message: 'Name, node count, node type, AWS account ID and region are required'
         });
       }
       
       // Create cluster
-      const result = await cloudService.createCluster(provider, name, nodeCount, nodeType, region);
+      const result = await cloudService.createCluster(name, nodeCount, nodeType, accountId, region);
       
       res.json({
         status: 'success',
@@ -200,8 +251,17 @@ class CloudController {
    */
   async getClusters(req, res) {
     try {
-      const provider = req.query.provider;
-      const clusters = await cloudService.getClusters(provider);
+      const accountId = parseInt(req.query.accountId);
+      const region = req.query.region;
+      
+      if (!accountId || !region) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'AWS account ID and region are required'
+        });
+      }
+      
+      const clusters = await cloudService.getClusters(accountId, region);
       
       res.json({
         status: 'success',

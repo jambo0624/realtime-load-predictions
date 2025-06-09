@@ -38,7 +38,7 @@ const Dashboard = () => {
           <ControlPanel />
         </div>
         <div className="resource-management-wrapper">
-          <ResourceManagement isUserSelected={isUserSelected} />
+          <ResourceManagement />
         </div>
       </div>
       

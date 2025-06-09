@@ -3,6 +3,7 @@ const path = require('path');
 const { promisify } = require('util');
 const dayjs = require('dayjs');
 const logger = require('../utils/logger');
+const db = require('../utils/db');
 
 // Try to use dotenv for local development if needed
 try {
@@ -11,7 +12,7 @@ try {
   // Ignore if dotenv is not installed
 }
 
-// Optional: AWS SDK v3
+// AWS SDK v3
 let awsServices = {};
 try {
   // Import AWS SDK v3 core modules
@@ -23,6 +24,10 @@ try {
   awsServices.EKSClient = require('@aws-sdk/client-eks').EKSClient;
   awsServices.AutoScalingClient = require('@aws-sdk/client-auto-scaling').AutoScalingClient;
   
+  // Import STS client for assuming role
+  awsServices.STSClient = require('@aws-sdk/client-sts').STSClient;
+  awsServices.AssumeRoleCommand = require('@aws-sdk/client-sts').AssumeRoleCommand;
+  
   // Import AWS commands
   awsServices.ec2Commands = require('@aws-sdk/client-ec2');
   awsServices.eksCommands = require('@aws-sdk/client-eks');
@@ -32,476 +37,379 @@ try {
   logger.debug(err.message);
 }
 
-// Optional: Google Cloud SDK
-let { google } = {};
-try {
-  google = require('googleapis');
-} catch (err) {
-  logger.warn('Google Cloud SDK not installed. GCP provider functionality will be limited.');
-}
-
-// Optional: Azure SDK
-let azureIdentity, azureCompute, azureContainerService;
-try {
-  azureIdentity = require('@azure/identity');
-  azureCompute = require('@azure/arm-compute');
-  azureContainerService = require('@azure/arm-containerservice');
-} catch (err) {
-  logger.warn('Azure SDK not installed. Azure provider functionality will be limited.');
-}
-
 /**
- * Cloud service for managing cloud provider resources
+ * Cloud service for managing AWS cloud resources
  */
 class CloudService {
   constructor() {
-    // Initialize credential storage
-    this.credentialsDir = path.join(__dirname, '../../data/credentials');
+    // Initialize local storage
+    this.tempCredentialsDir = path.join(__dirname, '../../data/temp_credentials');
     
-    // Create credentials directory if it doesn't exist
-    if (!fs.existsSync(this.credentialsDir)) {
-      fs.mkdirSync(this.credentialsDir, { recursive: true });
+    // Create temp credentials directory if it doesn't exist
+    if (!fs.existsSync(this.tempCredentialsDir)) {
+      fs.mkdirSync(this.tempCredentialsDir, { recursive: true });
     }
     
-    // Initialize AWS clients
+    // Initialize AWS clients cache
     this.awsClients = {};
     
-    // Initialize Google clients
-    this.googleClients = {};
-    
-    // Initialize Azure clients
-    this.azureClients = {};
-    
-    // Try to load Azure SDK
-    try {
-      // In a real implementation, we would require Azure SDK here
-      // Example: 
-      // require("@azure/identity");
-      // require("@azure/arm-containerservice");
-      // require("@azure/arm-compute");
-      logger.info('Azure SDK support initialized');
-    } catch (err) {
-      logger.warn('Azure SDK not installed. Azure provider functionality will be limited.');
-    }
+    // Cache for temporary credentials
+    this.temporaryCredentials = {};
   }
   
   /**
-   * Save cloud provider credentials
-   * @param {string} provider - Cloud provider (aws, gcp, azure)
-   * @param {string} apiKey - API key
-   * @param {string} apiSecret - API secret
-   * @param {string} region - Region
+   * Save AWS account with IAM role
+   * @param {number} userId - User ID
+   * @param {string} accountId - AWS account ID
+   * @param {string} roleArn - IAM role ARN
+   * @param {string} externalId - External ID for cross-account role (optional)
+   * @param {string[]} regions - AWS regions to monitor
    * @returns {Promise<Object>} - Result
    */
-  async saveCredentials(provider, apiKey, apiSecret, region) {
+  async saveAwsAccount(userId, accountId, roleArn, externalId, regions) {
     try {
-      const credentials = {
-        provider,
-        apiKey,
-        apiSecret,
-        region,
-        lastUpdated: dayjs().toDate()
-      };
+      // Validate AWS account ID format (12 digits)
+      if (!/^\d{12}$/.test(accountId)) {
+        throw new Error('Invalid AWS account ID format. Must be 12 digits.');
+      }
       
-      const fileName = `${provider}-credentials.json`;
-      const filePath = path.join(this.credentialsDir, fileName);
+      // Validate IAM role ARN format
+      if (!/^arn:aws:iam::\d{12}:role\/[\w+=,.@-]+$/.test(roleArn)) {
+        throw new Error('Invalid IAM role ARN format.');
+      }
       
-      // Save credentials to file
-      await promisify(fs.writeFile)(filePath, JSON.stringify(credentials, null, 2));
+      // Validate regions
+      if (!Array.isArray(regions) || regions.length === 0) {
+        throw new Error('At least one AWS region must be specified.');
+      }
       
-      logger.info(`Saved ${provider} credentials`);
+      // Validate all regions are in the correct format
+      const validRegionPattern = /^[a-z]{2}-[a-z]+-\d$/;
+      for (const region of regions) {
+        if (!validRegionPattern.test(region)) {
+          throw new Error(`Invalid AWS region format: ${region}`);
+        }
+      }
       
-      // Initialize provider client
-      await this._initializeProviderClient(provider, credentials);
+      // Check if user already has an account
+      const existingAccounts = await db.getAwsAccounts(userId);
       
-      return {
-        provider,
-        region,
-        lastUpdated: credentials.lastUpdated
-      };
+      let result;
+      if (existingAccounts.success && existingAccounts.accounts.length > 0) {
+        // Update existing account
+        const existingAccount = existingAccounts.accounts[0];
+        result = await db.saveAwsAccount(userId, accountId, roleArn, externalId, regions);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to update AWS account');
+        }
+        
+        return {
+          success: true,
+          account: result.account,
+          updated: true
+        };
+      } else {
+        // Create new account
+        result = await db.saveAwsAccount(userId, accountId, roleArn, externalId, regions);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to save AWS account');
+        }
+        
+        return {
+          success: true,
+          account: result.account,
+          updated: false
+        };
+      }
     } catch (error) {
-      logger.error(`Error saving ${provider} credentials:`, error);
-      throw new Error(`Failed to save ${provider} credentials: ${error.message}`);
+      logger.error(`Error saving AWS account:`, error);
+      throw new Error(`Failed to save AWS account: ${error.message}`);
     }
   }
   
   /**
-   * Get cloud provider credentials
-   * @param {string} provider - Cloud provider (aws, gcp, azure)
-   * @returns {Promise<Object>} - Credentials
+   * Get AWS accounts for a user
+   * @param {number} userId - User ID
+   * @returns {Promise<Object>} - AWS accounts
    */
-  async getCredentials(provider) {
+  async getAwsAccounts(userId) {
     try {
-      const fileName = `${provider}-credentials.json`;
-      const filePath = path.join(this.credentialsDir, fileName);
+      const result = await db.getAwsAccounts(userId);
       
-      if (!fs.existsSync(filePath)) {
-        return null;
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to get AWS accounts');
       }
       
-      const data = await promisify(fs.readFile)(filePath, 'utf8');
-      const credentials = JSON.parse(data);
-      
-      // Return only non-sensitive data
       return {
-        provider: credentials.provider,
-        region: credentials.region,
-        lastUpdated: credentials.lastUpdated
+        success: true,
+        accounts: result.accounts
       };
     } catch (error) {
-      logger.error(`Error getting ${provider} credentials:`, error);
-      throw new Error(`Failed to get ${provider} credentials: ${error.message}`);
+      logger.error(`Error getting AWS accounts:`, error);
+      throw new Error(`Failed to get AWS accounts: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Delete an AWS account
+   * @param {number} accountId - Account ID to delete
+   * @param {number} userId - User ID for verification
+   * @returns {Promise<Object>} - Result
+   */
+  async deleteAwsAccount(accountId, userId) {
+    try {
+      const result = await db.deleteAwsAccount(accountId, userId);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to delete AWS account');
+      }
+      
+      // Clear any cached clients for this account
+      this._clearClientCache(accountId);
+      
+      return { success: true };
+    } catch (error) {
+      logger.error(`Error deleting AWS account:`, error);
+      throw new Error(`Failed to delete AWS account: ${error.message}`);
     }
   }
   
   /**
    * Apply resource scaling strategy
-   * @param {string} provider - Cloud provider
    * @param {string} strategy - Scaling strategy (auto, manual, predictive)
    * @param {Object} resources - Resource requirements
    * @param {Object} thresholds - Scaling thresholds
+   * @param {number} accountId - AWS account ID from database
+   * @param {string} region - AWS region to use
    * @returns {Promise<Object>} - Result
    */
-  async applyResourceStrategy(provider, strategy, resources, thresholds) {
+  async applyResourceStrategy(strategy, resources, thresholds, accountId, region) {
     try {
-      logger.info(`Applying ${strategy} scaling strategy for ${provider}`);
+      logger.info(`Applying ${strategy} scaling strategy for AWS account ${accountId} in region ${region}`);
       
-      // Load credentials
-      const credentials = await this._loadCredentials(provider);
-      if (!credentials) {
-        throw new Error(`No credentials found for ${provider}`);
-      }
+      // Initialize clients for this account and region
+      await this._initializeAwsClient(accountId, region);
       
-      // Initialize client if needed
-      await this._initializeProviderClient(provider, credentials);
-      
-      // Apply strategy based on provider and strategy type
-      let result;
-      switch (provider) {
-        case 'aws':
-          result = await this._applyAwsStrategy(strategy, resources, thresholds);
-          break;
-        case 'gcp':
-          result = await this._applyGcpStrategy(strategy, resources, thresholds);
-          break;
-        case 'azure':
-          result = await this._applyAzureStrategy(strategy, resources, thresholds);
-          break;
-        default:
-          throw new Error(`Unsupported provider: ${provider}`);
-      }
-      
-      // Save strategy for future reference
-      const strategyData = {
-        provider,
-        strategy,
-        resources,
-        thresholds,
-        applied: dayjs().toDate()
-      };
-      
-      const fileName = `${provider}-strategy.json`;
-      const filePath = path.join(this.credentialsDir, fileName);
-      
-      await promisify(fs.writeFile)(filePath, JSON.stringify(strategyData, null, 2));
+      // Apply strategy
+      let result = await this._applyAwsStrategy(strategy, resources, thresholds);
       
       return {
         ...result,
         strategy,
-        applied: strategyData.applied
+        applied: dayjs().toDate()
       };
     } catch (error) {
-      logger.error(`Error applying ${provider} strategy:`, error);
-      throw new Error(`Failed to apply ${provider} strategy: ${error.message}`);
+      logger.error(`Error applying AWS strategy:`, error);
+      throw new Error(`Failed to apply AWS strategy: ${error.message}`);
     }
   }
   
   /**
    * Get current cloud resources
-   * @param {string} provider - Cloud provider
+   * @param {number} accountId - AWS account ID from database
+   * @param {string} region - AWS region to use
    * @returns {Promise<Object>} - Current resources
    */
-  async getResources(provider) {
+  async getResources(accountId, region) {
     try {
-      // Load credentials
-      const credentials = await this._loadCredentials(provider);
-      if (!credentials) {
-        throw new Error(`No credentials found for ${provider}`);
-      }
+      // Initialize client for this account and region
+      await this._initializeAwsClient(accountId, region);
       
-      // Initialize client if needed
-      await this._initializeProviderClient(provider, credentials);
-      
-      // Get resources based on provider
-      switch (provider) {
-        case 'aws':
+      // Get AWS resources
           return this._getAwsResources();
-        case 'gcp':
-          return this._getGcpResources();
-        case 'azure':
-          return this._getAzureResources();
-        default:
-          throw new Error(`Unsupported provider: ${provider}`);
-      }
     } catch (error) {
-      logger.error(`Error getting ${provider} resources:`, error);
-      throw new Error(`Failed to get ${provider} resources: ${error.message}`);
+      logger.error(`Error getting AWS resources:`, error);
+      throw new Error(`Failed to get AWS resources: ${error.message}`);
     }
   }
   
   /**
    * Scale cloud resources
-   * @param {string} provider - Cloud provider
    * @param {string} resourceType - Resource type (cpu, memory, instances)
    * @param {number} amount - Amount to scale to
+   * @param {number} accountId - AWS account ID from database
+   * @param {string} region - AWS region to use
    * @returns {Promise<Object>} - Result
    */
-  async scaleResources(provider, resourceType, amount) {
+  async scaleResources(resourceType, amount, accountId, region) {
     try {
-      // Load credentials
-      const credentials = await this._loadCredentials(provider);
-      if (!credentials) {
-        throw new Error(`No credentials found for ${provider}`);
-      }
+      // Initialize client for this account and region
+      await this._initializeAwsClient(accountId, region);
       
-      // Initialize client if needed
-      await this._initializeProviderClient(provider, credentials);
-      
-      // Scale resources based on provider
-      switch (provider) {
-        case 'aws':
+      // Scale AWS resources
           return this._scaleAwsResources(resourceType, amount);
-        case 'gcp':
-          return this._scaleGcpResources(resourceType, amount);
-        case 'azure':
-          return this._scaleAzureResources(resourceType, amount);
-        default:
-          throw new Error(`Unsupported provider: ${provider}`);
-      }
     } catch (error) {
-      logger.error(`Error scaling ${provider} resources:`, error);
-      throw new Error(`Failed to scale ${provider} resources: ${error.message}`);
+      logger.error(`Error scaling AWS resources:`, error);
+      throw new Error(`Failed to scale AWS resources: ${error.message}`);
     }
   }
   
   /**
    * Create a new cluster
-   * @param {string} provider - Cloud provider
    * @param {string} name - Cluster name
    * @param {number} nodeCount - Number of nodes
    * @param {string} nodeType - Node type
-   * @param {string} region - Region
+   * @param {number} accountId - AWS account ID from database
+   * @param {string} region - AWS region to use
    * @returns {Promise<Object>} - Result
    */
-  async createCluster(provider, name, nodeCount, nodeType, region) {
+  async createCluster(name, nodeCount, nodeType, accountId, region) {
     try {
-      // Load credentials
-      const credentials = await this._loadCredentials(provider);
-      if (!credentials) {
-        throw new Error(`No credentials found for ${provider}`);
-      }
+      // Initialize client for this account and region
+      await this._initializeAwsClient(accountId, region);
       
-      // Initialize client if needed
-      await this._initializeProviderClient(provider, credentials);
-      
-      // Create cluster based on provider
-      switch (provider) {
-        case 'aws':
+      // Create AWS cluster
           return this._createAwsCluster(name, nodeCount, nodeType, region);
-        case 'gcp':
-          return this._createGcpCluster(name, nodeCount, nodeType, region);
-        case 'azure':
-          return this._createAzureCluster(name, nodeCount, nodeType, region);
-        default:
-          throw new Error(`Unsupported provider: ${provider}`);
-      }
     } catch (error) {
-      logger.error(`Error creating ${provider} cluster:`, error);
-      throw new Error(`Failed to create ${provider} cluster: ${error.message}`);
+      logger.error(`Error creating AWS cluster:`, error);
+      throw new Error(`Failed to create AWS cluster: ${error.message}`);
     }
   }
   
   /**
    * Get all clusters
-   * @param {string} provider - Cloud provider
+   * @param {number} accountId - AWS account ID from database
+   * @param {string} region - AWS region to use
    * @returns {Promise<Array>} - Clusters
    */
-  async getClusters(provider) {
+  async getClusters(accountId, region) {
     try {
-      // Load credentials
-      const credentials = await this._loadCredentials(provider);
-      if (!credentials) {
-        throw new Error(`No credentials found for ${provider}`);
-      }
+      // Initialize client for this account and region
+      await this._initializeAwsClient(accountId, region);
       
-      // Initialize client if needed
-      await this._initializeProviderClient(provider, credentials);
-      
-      // Get clusters based on provider
-      switch (provider) {
-        case 'aws':
+      // Get AWS clusters
           return this._getAwsClusters();
-        case 'gcp':
-          return this._getGcpClusters();
-        case 'azure':
-          return this._getAzureClusters();
-        default:
-          throw new Error(`Unsupported provider: ${provider}`);
-      }
     } catch (error) {
-      logger.error(`Error getting ${provider} clusters:`, error);
-      throw new Error(`Failed to get ${provider} clusters: ${error.message}`);
+      logger.error(`Error getting AWS clusters:`, error);
+      throw new Error(`Failed to get AWS clusters: ${error.message}`);
     }
   }
   
   // Private methods
   
   /**
-   * Load credentials for a provider
-   * @param {string} provider - Cloud provider
-   * @returns {Promise<Object>} - Credentials
+   * Initialize AWS client using STS assume role
+   * @param {number} accountId - AWS account ID from database
+   * @param {string} region - AWS region to use
+   * @returns {Promise<void>}
    * @private
    */
-  async _loadCredentials(provider) {
+  async _initializeAwsClient(accountId, region) {
+    const clientKey = `${accountId}-${region}`;
+    
+    // Check if we already have a client for this account/region
+    if (this.awsClients[clientKey] && this._areCredentialsValid(this.temporaryCredentials[clientKey])) {
+      logger.debug(`Using cached AWS client for account ${accountId} in region ${region}`);
+      return;
+    }
+    
     try {
-      const fileName = `${provider}-credentials.json`;
-      const filePath = path.join(this.credentialsDir, fileName);
-      
-      if (!fs.existsSync(filePath)) {
-        return null;
+      if (!awsServices.STSClient) {
+        throw new Error('AWS SDK v3 not installed or STS client not available');
       }
       
-      const data = await promisify(fs.readFile)(filePath, 'utf8');
-      return JSON.parse(data);
-    } catch (error) {
-      logger.error(`Error loading ${provider} credentials:`, error);
-      return null;
+      // Get account credentials from database
+      const result = await db.getAwsAccountCredentials(accountId);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to get AWS account credentials');
+      }
+      
+      const account = result.account;
+      
+      // Verify that the requested region is in the allowed regions
+      if (!account.regions.includes(region)) {
+        throw new Error(`Region ${region} is not allowed for this AWS account`);
+      }
+      
+      // Create STS client
+      const sts = new awsServices.STSClient({ region });
+      
+      // Set up parameters for assuming the role
+      const params = {
+        RoleArn: account.role_arn,
+        RoleSessionName: `LoadPredictions-${dayjs().unix()}`,
+        DurationSeconds: 3600 // 1 hour
+      };
+      
+      // Add external ID if provided
+      if (account.external_id) {
+        params.ExternalId = account.external_id;
+      }
+      
+      // Assume the role
+      const assumeRoleCommand = new awsServices.AssumeRoleCommand(params);
+      const response = await sts.send(assumeRoleCommand);
+      
+      // Get the temporary credentials
+      const credentials = {
+        accessKeyId: response.Credentials.AccessKeyId,
+        secretAccessKey: response.Credentials.SecretAccessKey,
+        sessionToken: response.Credentials.SessionToken,
+        expiration: response.Credentials.Expiration
+      };
+      
+      // Save temporary credentials
+      this.temporaryCredentials[clientKey] = credentials;
+      
+      // Create client configuration
+      const clientConfig = {
+        region,
+        credentials
+      };
+      
+      // Initialize AWS clients
+      this.awsClients[clientKey] = {
+        ec2: new awsServices.EC2Client(clientConfig),
+        eks: new awsServices.EKSClient(clientConfig),
+        autoscaling: new awsServices.AutoScalingClient(clientConfig),
+        ec2Commands: awsServices.ec2Commands,
+        eksCommands: awsServices.eksCommands,
+        autoScalingCommands: awsServices.autoScalingCommands,
+        region
+      };
+      
+      logger.info(`AWS clients initialized for account ${account.account_id} in region ${region}`);
+        } catch (error) {
+      logger.error(`Error initializing AWS client: ${error.message}`);
+      throw new Error(`Failed to initialize AWS client: ${error.message}`);
     }
   }
   
   /**
-   * Initialize cloud provider client
-   * @param {string} provider - Cloud provider
-   * @param {Object} credentials - Provider credentials
-   * @returns {Promise<void>}
+   * Check if temporary credentials are still valid
+   * @param {Object} credentials - Temporary credentials to check
+   * @returns {boolean} - Whether credentials are valid
    * @private
    */
-  async _initializeProviderClient(provider, credentials) {
-    switch (provider) {
-      case 'aws':
-        if (awsServices.EC2Client) {
-          logger.info('Initializing AWS SDK v3 clients');
-          
-          // Configure AWS SDK v3 credentials
-          const clientConfig = {
-            region: credentials.region,
-            credentials: {
-              accessKeyId: credentials.apiKey,
-              secretAccessKey: credentials.apiSecret,
-            }
-          };
-          
-          // Initialize AWS clients using v3 SDK
-          this.awsClients.ec2 = new awsServices.EC2Client(clientConfig);
-          this.awsClients.eks = new awsServices.EKSClient(clientConfig);
-          this.awsClients.autoscaling = new awsServices.AutoScalingClient(clientConfig);
-          
-          // Store commands for later use
-          this.awsClients.ec2Commands = awsServices.ec2Commands;
-          this.awsClients.eksCommands = awsServices.eksCommands;
-          this.awsClients.autoScalingCommands = awsServices.autoScalingCommands;
-          
-          logger.info('AWS SDK v3 clients initialized successfully');
-        } else {
-          logger.warn('AWS SDK v3 not installed. AWS functionality will be limited.');
-        }
-        break;
-        
-      case 'gcp':
-        if (google) {
-          // Configure Google SDK
-          const auth = new google.auth.JWT(
-            credentials.apiKey,
-            null,
-            credentials.apiSecret,
-            ['https://www.googleapis.com/auth/cloud-platform']
-          );
-          
-          // FIXME: maybe get current resources from the cloud provider first
-          // Initialize common Google services
-          this.googleClients.compute = google.compute('v1');
-          this.googleClients.container = google.container('v1');
-          this.googleClients.auth = auth;
-        } else {
-          logger.warn('Google Cloud SDK not installed. GCP functionality will be limited.');
-        }
-        break;
-        
-      case 'azure':
-        // Azure SDK initialization would go here
-        // In a real implementation, we would use @azure/arm-compute, @azure/arm-resources, and @azure/arm-containerservice
-        try {
-          logger.info('Initializing Azure client');
-          
-          if (azureIdentity && azureCompute && azureContainerService) {
-            // Initialize Azure SDK here
-            const { ClientSecretCredential } = azureIdentity;
-            const { ComputeManagementClient } = azureCompute;
-            const { ContainerServiceClient } = azureContainerService;
-            
-            // Get tenant and subscription IDs from environment or credentials
-            const tenantId = credentials.tenantId || process.env.AZURE_TENANT_ID;
-            const subscriptionId = credentials.subscriptionId || process.env.AZURE_SUBSCRIPTION_ID;
-            
-            if (!tenantId || !subscriptionId) {
-              logger.warn('Azure tenant ID or subscription ID not provided. Some Azure features may not work.');
-            }
-            
-            try {
-              // Create Azure credential
-              const credential = new ClientSecretCredential(
-                tenantId, 
-                credentials.apiKey,
-                credentials.apiSecret
-              );
-              
-              // Initialize Azure clients
-              this.azureClients = {
-                compute: new ComputeManagementClient(credential, subscriptionId),
-                containerService: new ContainerServiceClient(credential, subscriptionId),
-                region: credentials.region,
-                initialized: true
-              };
-              
-              logger.info('Azure clients initialized successfully');
-            } catch (error) {
-              logger.error('Error creating Azure credential:', error);
-              // Fallback to mock client
-              this.azureClients = {
-                initialized: false,
-                region: credentials.region
-              };
-            }
-          } else {
-            // For now, we'll use mock responses
-            this.azureClients = {
-              initialized: false,
-              region: credentials.region
-            };
-            logger.warn('Azure SDK not available, using mock responses');
-          }
-        } catch (error) {
-          logger.error('Error initializing Azure SDK:', error);
-          logger.warn('Azure functionality will be limited');
-        }
-        break;
-        
-      default:
-        logger.warn(`Unknown provider: ${provider}`);
+  _areCredentialsValid(credentials) {
+    if (!credentials || !credentials.expiration) {
+      return false;
     }
+    
+    // Add a 5-minute buffer to avoid edge cases
+    const expirationTime = new Date(credentials.expiration).getTime();
+    const currentTime = new Date().getTime();
+    const fiveMinutesInMs = 5 * 60 * 1000;
+    
+    return expirationTime - currentTime > fiveMinutesInMs;
   }
   
-  // AWS implementation methods
+  /**
+   * Clear client cache for a specific account
+   * @param {number} accountId - Account ID to clear cache for
+   * @private
+   */
+  _clearClientCache(accountId) {
+    for (const key in this.awsClients) {
+      if (key.startsWith(`${accountId}-`)) {
+        delete this.awsClients[key];
+        delete this.temporaryCredentials[key];
+      }
+    }
+  }
   
   /**
    * Apply AWS scaling strategy
@@ -512,11 +420,10 @@ class CloudService {
    * @private
    */
   async _applyAwsStrategy(strategy, resources, thresholds) {
-    if (!this.awsClients.ec2) {
+    if (!this.awsClients) {
       return this._mockCloudResponse('aws', strategy);
     }
     
-    // TODO: fix mock response
     try {
       switch (strategy) {
         case 'auto':
@@ -549,14 +456,15 @@ class CloudService {
    * @private
    */
   async _getAwsResources() {
-    if (!this.awsClients.ec2) {
+    const clientKey = Object.keys(this.awsClients)[0];
+    if (!clientKey || !this.awsClients[clientKey].ec2) {
       return this._mockCloudResponse('aws', 'resources');
     }
     
     try {
       // Example of using AWS SDK v3 to describe instances
-      // const command = new this.awsClients.ec2Commands.DescribeInstancesCommand({});
-      // const response = await this.awsClients.ec2.send(command);
+      // const command = new this.awsClients[clientKey].ec2Commands.DescribeInstancesCommand({});
+      // const response = await this.awsClients[clientKey].ec2.send(command);
       
       // In a real implementation, this would process the response
       // and return actual resource usage
@@ -577,18 +485,19 @@ class CloudService {
    * @private
    */
   async _scaleAwsResources(resourceType, amount) {
-    if (!this.awsClients.ec2) {
+    const clientKey = Object.keys(this.awsClients)[0];
+    if (!clientKey || !this.awsClients[clientKey].ec2) {
       return this._mockCloudResponse('aws', 'scale');
     }
     
     try {
       // Example of using AWS SDK v3 to update an Auto Scaling group
       // if (resourceType === 'instances') {
-      //   const command = new this.awsClients.autoScalingCommands.UpdateAutoScalingGroupCommand({
+      //   const command = new this.awsClients[clientKey].autoScalingCommands.UpdateAutoScalingGroupCommand({
       //     AutoScalingGroupName: 'my-asg',
       //     DesiredCapacity: amount
       //   });
-      //   await this.awsClients.autoscaling.send(command);
+      //   await this.awsClients[clientKey].autoscaling.send(command);
       // }
       
       // For now, return a mock response
@@ -609,13 +518,14 @@ class CloudService {
    * @private
    */
   async _createAwsCluster(name, nodeCount, nodeType, region) {
-    if (!this.awsClients.eks) {
+    const clientKey = Object.keys(this.awsClients)[0];
+    if (!clientKey || !this.awsClients[clientKey].eks) {
       return this._mockCloudResponse('aws', 'cluster');
     }
     
     try {
       // Example of using AWS SDK v3 to create an EKS cluster
-      // const command = new this.awsClients.eksCommands.CreateClusterCommand({
+      // const command = new this.awsClients[clientKey].eksCommands.CreateClusterCommand({
       //   name,
       //   roleArn: 'arn:aws:iam::123456789012:role/eks-service-role',
       //   resourcesVpcConfig: {
@@ -623,7 +533,7 @@ class CloudService {
       //   },
       //   version: '1.24'
       // });
-      // await this.awsClients.eks.send(command);
+      // await this.awsClients[clientKey].eks.send(command);
       
       // For now, return a mock response
       return this._mockCloudResponse('aws', 'cluster');
@@ -639,454 +549,21 @@ class CloudService {
    * @private
    */
   async _getAwsClusters() {
-    if (!this.awsClients.eks) {
+    const clientKey = Object.keys(this.awsClients)[0];
+    if (!clientKey || !this.awsClients[clientKey].eks) {
       return this._mockCloudResponse('aws', 'clusters');
     }
     
     try {
       // Example of using AWS SDK v3 to list EKS clusters
-      // const command = new this.awsClients.eksCommands.ListClustersCommand({});
-      // const response = await this.awsClients.eks.send(command);
+      // const command = new this.awsClients[clientKey].eksCommands.ListClustersCommand({});
+      // const response = await this.awsClients[clientKey].eks.send(command);
       // const clusterNames = response.clusters;
       
       // For now, return a mock response
       return this._mockCloudResponse('aws', 'clusters');
     } catch (error) {
       logger.error('Error getting AWS clusters:', error);
-      throw error;
-    }
-  }
-  
-  // GCP implementation methods
-  
-  /**
-   * Apply GCP scaling strategy
-   * @param {string} strategy - Scaling strategy
-   * @param {Object} resources - Resource requirements
-   * @param {Object} thresholds - Scaling thresholds
-   * @returns {Promise<Object>} - Result
-   * @private
-   */
-  async _applyGcpStrategy(strategy, resources, thresholds) {
-    if (!google) {
-      return this._mockCloudResponse('gcp', strategy);
-    }
-    
-    // TODO: fix mock response
-    try {
-      switch (strategy) {
-        case 'auto':
-          // For now, return a mock response
-          // In a real implementation, this would configure GCP autoscaling
-          return this._mockCloudResponse('gcp', 'auto');
-          
-        case 'manual':
-          // For now, return a mock response
-          // In a real implementation, this would set a fixed instance size/count
-          return this._mockCloudResponse('gcp', 'manual');
-          
-        case 'predictive':
-          // For now, return a mock response
-          // In a real implementation, this would configure predictive scaling
-          return this._mockCloudResponse('gcp', 'predictive');
-          
-        default:
-          throw new Error(`Unknown GCP strategy: ${strategy}`);
-      }
-    } catch (error) {
-      logger.error('Error applying GCP strategy:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Get GCP resources
-   * @returns {Promise<Object>} - GCP resources
-   * @private
-   */
-  async _getGcpResources() {
-    if (!google) {
-      return this._mockCloudResponse('gcp', 'resources');
-    }
-    
-    try {
-      // In a real implementation, this would call GCP APIs
-      // to get current resource usage
-      return this._mockCloudResponse('gcp', 'resources');
-    } catch (error) {
-      logger.error('Error getting GCP resources:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Scale GCP resources
-   * @param {string} resourceType - Resource type
-   * @param {number} amount - Amount to scale to
-   * @returns {Promise<Object>} - Result
-   * @private
-   */
-  async _scaleGcpResources(resourceType, amount) {
-    if (!google) {
-      return this._mockCloudResponse('gcp', 'scale');
-    }
-    
-    try {
-      // In a real implementation, this would call GCP APIs
-      // to scale resources
-      return this._mockCloudResponse('gcp', 'scale');
-    } catch (error) {
-      logger.error('Error scaling GCP resources:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Create GCP cluster
-   * @param {string} name - Cluster name
-   * @param {number} nodeCount - Number of nodes
-   * @param {string} nodeType - Node type
-   * @param {string} region - Region
-   * @returns {Promise<Object>} - Result
-   * @private
-   */
-  async _createGcpCluster(name, nodeCount, nodeType, region) {
-    if (!google) {
-      return this._mockCloudResponse('gcp', 'cluster');
-    }
-    
-    try {
-      // In a real implementation, this would call GCP GKE APIs
-      // to create a new cluster
-      return this._mockCloudResponse('gcp', 'cluster');
-    } catch (error) {
-      logger.error('Error creating GCP cluster:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Get GCP clusters
-   * @returns {Promise<Array>} - GCP clusters
-   * @private
-   */
-  async _getGcpClusters() {
-    if (!google) {
-      return this._mockCloudResponse('gcp', 'clusters');
-    }
-    
-    try {
-      // In a real implementation, this would call GCP GKE APIs
-      // to get clusters
-      return this._mockCloudResponse('gcp', 'clusters');
-    } catch (error) {
-      logger.error('Error getting GCP clusters:', error);
-      throw error;
-    }
-  }
-  
-  // Azure implementation methods
-  
-  /**
-   * Apply Azure scaling strategy
-   * @param {string} strategy - Scaling strategy
-   * @param {Object} resources - Resource requirements
-   * @param {Object} thresholds - Scaling thresholds
-   * @returns {Promise<Object>} - Result
-   * @private
-   */
-  async _applyAzureStrategy(strategy, resources, thresholds) {
-    // We would use @azure/arm-compute or similar packages in a real implementation
-    
-    try {
-      // Check if Azure clients are properly initialized
-      if (!this.azureClients || !this.azureClients.initialized) {
-        logger.info('Azure clients not initialized, using mock response');
-        return this._mockCloudResponse('azure', strategy);
-      }
-      
-      // Get region from initialized clients
-      const region = this.azureClients.region;
-      
-      switch (strategy) {
-        case 'auto':
-          // In a real implementation, this would configure Azure Virtual Machine Scale Sets (VMSS)
-          // with autoscaling rules based on CPU and memory metrics
-          logger.info('Configuring Azure Auto Scaling strategy');
-          
-          // In a production environment, we would use code like this:
-          /*
-          // Create autoscale settings for the VMSS
-          const autoscaleSettings = {
-            location: region,
-            targetResourceUri: '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}',
-            profiles: [
-              {
-                name: "Auto created scale condition",
-                capacity: {
-                  minimum: String(resources.minInstances),
-                  maximum: String(resources.maxInstances),
-                  default: String(resources.minInstances)
-                },
-                rules: [
-                  // CPU scale-out rule
-                  {
-                    metricTrigger: {
-                      metricName: "Percentage CPU",
-                      metricNamespace: "",
-                      metricResourceUri: '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}',
-                      timeGrain: "PT1M",
-                      statistic: "Average",
-                      timeWindow: "PT5M",
-                      timeAggregation: "Average",
-                      operator: "GreaterThan",
-                      threshold: thresholds.cpu
-                    },
-                    scaleAction: {
-                      direction: "Increase",
-                      type: "ChangeCount",
-                      value: "1",
-                      cooldown: "PT5M"
-                    }
-                  },
-                  // Memory scale-out rule
-                  {
-                    metricTrigger: {
-                      metricName: "Available Memory Bytes",
-                      metricResourceUri: '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}',
-                      timeGrain: "PT1M",
-                      statistic: "Average",
-                      timeWindow: "PT5M",
-                      timeAggregation: "Average",
-                      operator: "LessThan",
-                      threshold: 100 - thresholds.memory
-                    },
-                    scaleAction: {
-                      direction: "Increase",
-                      type: "ChangeCount",
-                      value: "1",
-                      cooldown: "PT5M"
-                    }
-                  }
-                ]
-              }
-            ]
-          };
-          
-          // Apply the autoscale settings
-          const result = await this.azureClients.monitor.autoscaleSettings.createOrUpdate(
-            'resourceGroupName',
-            'autoscaleSettingName',
-            autoscaleSettings
-          );
-          */
-          
-          return this._mockCloudResponse('azure', 'auto');
-          
-        case 'manual':
-          // In a real implementation, this would set fixed instance sizes in Azure
-          // using Azure Resource Manager APIs
-          logger.info('Configuring Azure Manual Scaling strategy');
-          
-          // In a production environment, we would use code like this:
-          /*
-          // Determine the appropriate VM size based on CPU/memory requirements
-          const vmSize = resources.cpu <= 2 ? 'Standard_DS1_v2' : 
-                         resources.cpu <= 4 ? 'Standard_DS2_v2' : 
-                         resources.cpu <= 8 ? 'Standard_DS3_v2' : 'Standard_DS4_v2';
-          
-          // Update the VMSS with the new capacity and VM size
-          const vmssUpdate = {
-            sku: {
-              name: vmSize,
-              tier: "Standard",
-              capacity: resources.instances
-            }
-          };
-          
-          const result = await this.azureClients.compute.virtualMachineScaleSets.update(
-            'resourceGroupName',
-            'vmssName',
-            vmssUpdate
-          );
-          */
-          
-          return this._mockCloudResponse('azure', 'manual');
-          
-        case 'predictive':
-          // In a real implementation, this would use Azure Autoscale with predictive scaling
-          // possibly integrating with Azure Monitor for metrics-based scaling
-          logger.info('Configuring Azure Predictive Scaling strategy');
-          
-          // In a production environment, we would use code like this:
-          /*
-          // Configure predictive autoscale settings
-          // Note: Azure doesn't have native predictive scaling like AWS, 
-          // but we can approximate it with scheduled autoscale profiles
-          
-          // Create autoscale settings with both reactive and scheduled rules
-          const predictiveSettings = {
-            location: region,
-            targetResourceUri: '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}',
-            profiles: [
-              // Regular reactive scaling profile
-              {
-                name: "Default profile",
-                capacity: {
-                  minimum: String(resources.minInstances),
-                  maximum: String(resources.maxInstances),
-                  default: String(resources.minInstances)
-                },
-                rules: [
-                  // CPU rule with buffer
-                  {
-                    metricTrigger: {
-                      metricName: "Percentage CPU",
-                      threshold: thresholds.cpu - thresholds.cpuBuffer, // Apply buffer for proactive scaling
-                      // other settings similar to auto scaling
-                    },
-                    scaleAction: {
-                      direction: "Increase",
-                      type: "ChangeCount",
-                      value: "1",
-                      cooldown: "PT5M"
-                    }
-                  }
-                ]
-              },
-              // Scheduled scaling profiles based on historical patterns
-              // These would be generated from prediction models
-              {
-                name: "Morning peak hours",
-                capacity: {
-                  minimum: String(Math.ceil(resources.minInstances * 1.5)),
-                  maximum: String(resources.maxInstances),
-                  default: String(Math.ceil(resources.minInstances * 1.5))
-                },
-                fixedDate: {
-                  timeZone: "UTC",
-                  start: "2023-01-01T08:00:00Z", // Example date
-                  end: "2023-01-01T10:00:00Z"    // Example date
-                },
-                recurrence: {
-                  frequency: "Week",
-                  schedule: {
-                    days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-                    hours: [8],
-                    minutes: [0]
-                  }
-                }
-                // Rules would be similar to the default profile
-              }
-            ]
-          };
-          
-          const result = await this.azureClients.monitor.autoscaleSettings.createOrUpdate(
-            'resourceGroupName',
-            'predictiveScalingName',
-            predictiveSettings
-          );
-          */
-          
-          return this._mockCloudResponse('azure', 'predictive');
-          
-        default:
-          throw new Error(`Unknown Azure strategy: ${strategy}`);
-      }
-    } catch (error) {
-      logger.error('Error applying Azure strategy:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Get Azure resources
-   * @returns {Promise<Object>} - Azure resources
-   * @private
-   */
-  async _getAzureResources() {
-    try {
-      // In a real implementation, this would call Azure Resource Manager APIs
-      // to get current resource usage for VMs, AKS clusters, etc.
-      logger.info('Getting Azure resources');
-      return this._mockCloudResponse('azure', 'resources');
-    } catch (error) {
-      logger.error('Error getting Azure resources:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Scale Azure resources
-   * @param {string} resourceType - Resource type (cpu, memory, instances)
-   * @param {number} amount - Amount to scale to
-   * @returns {Promise<Object>} - Result
-   * @private
-   */
-  async _scaleAzureResources(resourceType, amount) {
-    try {
-      // In a real implementation, this would call Azure Resource Manager APIs
-      // to scale VM sizes, VMSS instance counts, or AKS node pools
-      logger.info(`Scaling Azure ${resourceType} to ${amount}`);
-      
-      const mockResponse = this._mockCloudResponse('azure', 'scale');
-      mockResponse.details.resourceType = resourceType;
-      mockResponse.details.current = amount;
-      
-      return mockResponse;
-    } catch (error) {
-      logger.error('Error scaling Azure resources:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Create Azure Kubernetes Service (AKS) cluster
-   * @param {string} name - Cluster name
-   * @param {number} nodeCount - Number of nodes
-   * @param {string} nodeType - Node type (VM size)
-   * @param {string} region - Azure region
-   * @returns {Promise<Object>} - Result
-   * @private
-   */
-  async _createAzureCluster(name, nodeCount, nodeType, region) {
-    try {
-      // In a real implementation, this would call Azure AKS APIs
-      // to create a new Kubernetes cluster
-      logger.info(`Creating Azure AKS cluster ${name} with ${nodeCount} nodes of type ${nodeType} in ${region}`);
-      
-      const mockResponse = this._mockCloudResponse('azure', 'cluster');
-      mockResponse.details.name = name;
-      mockResponse.details.nodeCount = nodeCount;
-      mockResponse.details.nodeType = nodeType;
-      mockResponse.details.region = region;
-      
-      return mockResponse;
-    } catch (error) {
-      logger.error('Error creating Azure AKS cluster:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Get Azure Kubernetes Service (AKS) clusters
-   * @returns {Promise<Array>} - Azure AKS clusters
-   * @private
-   */
-  async _getAzureClusters() {
-    try {
-      // In a real implementation, this would call Azure AKS APIs
-      // to get all Kubernetes clusters
-      logger.info('Getting Azure AKS clusters');
-      
-      const mockClusters = this._mockCloudResponse('azure', 'clusters');
-      // Customize the response to include Azure-specific node types
-      mockClusters[0].nodeType = 'Standard_DS2_v2';
-      mockClusters[1].nodeType = 'Standard_DS3_v2';
-      
-      return mockClusters;
-    } catch (error) {
-      logger.error('Error getting Azure AKS clusters:', error);
       throw error;
     }
   }

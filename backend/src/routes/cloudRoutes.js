@@ -3,9 +3,10 @@ const cloudController = require('../controllers/cloudController');
 
 const router = express.Router();
 
-// Cloud credentials routes
+// AWS account management routes
 router.post('/credentials', cloudController.saveCredentials);
 router.get('/credentials', cloudController.getCredentials);
+router.delete('/credentials', cloudController.deleteAwsAccount);
 
 // Resource management routes
 router.post('/resource-strategy', cloudController.applyResourceStrategy);
