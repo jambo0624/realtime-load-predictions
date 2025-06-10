@@ -120,86 +120,21 @@ class ApiService {
   }
 
   /**
-   * Save AWS account with IAM role
-   * @param {Object} accountData - AWS account data
-   * @param {number} accountData.userId - User ID
-   * @param {string} accountData.accountId - AWS Account ID
-   * @param {string} accountData.roleArn - IAM Role ARN
-   * @param {string} accountData.externalId - External ID (optional)
-   * @param {string[]} accountData.regions - AWS regions to monitor
-   * @returns {Promise} - Promise with result
-   */
-  async saveAwsAccount(accountData) {
-    try {
-      const response = await axios.post(`${CLOUD_API_URL}/credentials`, accountData);
-      return response.data;
-    } catch (error) {
-      console.error('Error saving AWS account:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get AWS accounts for a user
-   * @param {number} userId - User ID
-   * @returns {Promise} - Promise with result
-   */
-  async getAwsAccounts(userId) {
-    try {
-      const response = await axios.get(`${CLOUD_API_URL}/credentials`, { 
-        params: { userId } 
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error getting AWS accounts:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Delete an AWS account
-   * @param {number} accountId - AWS account ID to delete
-   * @param {number} userId - User ID
-   * @returns {Promise} - Promise with result
-   */
-  async deleteAwsAccount(accountId, userId) {
-    try {
-      const response = await axios.delete(`${CLOUD_API_URL}/credentials`, { 
-        data: { accountId, userId } 
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error deleting AWS account:', error);
-      throw error;
-    }
-  }
-
-  /**
    * Apply resource scaling strategy
    * @param {Object} strategyData - Resource strategy data
+   * @param {string} strategyData.strategy - Strategy (auto, manual, predictive)
+   * @param {Object} strategyData.resources - Resource requirements
+   * @param {Object} strategyData.thresholds - Resource thresholds
+   * @param {string} strategyData.region - AWS region
    * @returns {Promise} - Promise with result
    */
   async applyResourceStrategy(strategyData) {
     try {
-      const response = await axios.post(`${CLOUD_API_URL}/resource-strategy`, strategyData);
+      const response = await axios.post(`${CLOUD_API_URL}/strategy`, strategyData);
       return response.data;
     } catch (error) {
       console.error('Error applying resource strategy:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get current resource allocation
-   * @returns {Promise} - Promise with result
-   */
-  async getResourceAllocation() {
-    try {
-      const response = await axios.get(`${CLOUD_API_URL}/resources`);
-      return response.data;
-    } catch (error) {
-      console.error('Error getting resource allocation:', error);
-      throw error;
+      throw this._handleApiError(error);
     }
   }
 

@@ -10,9 +10,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-auto-scaling": "^3.481.0",
-    "@aws-sdk/client-ec2": "^3.481.0",
-    "@aws-sdk/client-eks": "^3.481.0",
-    "@aws-sdk/config-resolver": "^3.374.0",
+    "@aws-sdk/client-sts": "^3.481.0",
     "@aws-sdk/credential-provider-node": "^3.481.0",
     "cors": "^2.8.5",
     "csv-parser": "^3.2.0",

@@ -12,9 +12,6 @@ module.exports = {
     password: process.env.DB_PASSWORD || 'postgres',
   },
   
-  // This should be set via environment variable in production
-  encryptionKey: process.env.ENCRYPTION_KEY || 'your-strong-encryption-key-for-aws-credentials',
-  
   pythonScriptPath: process.env.PYTHON_SCRIPT_PATH || '../ml_engine/prediction/xgb.py',
   dataPath: process.env.DATA_PATH || '../ml_engine/processed_data/',
   predictionResultsPath: process.env.PREDICTION_RESULTS_PATH || '../../../ml_engine/prediction_results'
