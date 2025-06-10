@@ -1,8 +1,12 @@
 const fs = require('fs');
 const path = require('path');
+const { promisify } = require('util');
 const dayjs = require('dayjs');
 const logger = require('../utils/logger');
+const db = require('../utils/db');
 const predictionService = require('./predictionService');
+const userService = require('./userService');
+const dataService = require('./dataService');
 
 // Try to use dotenv for local development if needed
 try {
@@ -74,8 +78,49 @@ class CloudService {
       const region = AWS_CONFIG.region;
       await this._initializeAwsClient(null, region);
       logger.info(`Default AWS client initialized for region ${region}`);
+      
+      // After successful initialization, automatically import data and run predictions
+      this._autoImportAndPredict()
+        .then(() => logger.info('Auto import and prediction completed'))
+        .catch(err => logger.error('Error in auto import and prediction:', err));
+        
     } catch (error) {
       logger.error('Failed to initialize default AWS client:', error);
+    }
+  }
+  
+  /**
+   * Automatically import data and run predictions
+   * @private
+   */
+  async _autoImportAndPredict() {
+    try {
+      logger.info('Starting automatic data import and prediction process...');
+      
+      // 1. Import data
+      logger.info('Step 1: Importing data files...');
+      const importResult = await dataService.importAllFiles();
+      
+      if (importResult.status !== 'success') {
+        logger.warn(`Data import was not fully successful: ${importResult.message}`);
+      } else {
+        logger.info(`Successfully imported ${importResult.imported} files from ${importResult.files.length} total files`);
+      }
+      
+      // 2. Run predictions for all users
+      logger.info('Step 2: Running predictions for all users...');
+      const predictionResult = await dataService.runPredictionsForAllUsers();
+      
+      if (predictionResult.status !== 'success') {
+        logger.warn(`Prediction process was not fully successful: ${predictionResult.message}`);
+      } else {
+        logger.info(`Successfully ran predictions for ${predictionResult.results.length} users`);
+      }
+      
+      logger.info('Automatic data import and prediction process completed');
+    } catch (error) {
+      logger.error('Error in automatic data import and prediction process:', error);
+      throw error;
     }
   }
   

@@ -86,6 +86,20 @@ class UserService {
       throw error;
     }
   }
+
+  /**
+   * Get all users
+   * @returns {Promise<Array>} - Array of user objects
+   */
+  async getAllUsers() {
+    try {
+      const { rows } = await db.query('SELECT * FROM users');
+      return rows;
+    } catch (error) {
+      logger.error('Error fetching all users:', error);
+      throw error;
+    }
+  }
   
   /**
    * Get default system user

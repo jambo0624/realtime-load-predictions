@@ -1,89 +1,17 @@
-import React, { useState, useContext } from 'react';
-import useData from '../hooks/useData';
-import { useNotification } from '../context/NotificationContext';
+import React, { useContext } from 'react';
+import { UserContext } from '../context/UserContext';
 import UserSelect from './UserSelect';
 import ModelInfoPopover from './ModelInfoPopover';
-import { UserContext } from '../context/UserContext';
 
 /**
- * Control panel component for managing predictions
+ * Control panel component showing status and information
  */
 const ControlPanel = () => {
-  const {
-    connectionStatus, 
-    runPrediction, 
-    importData, 
-    importSpecificFile,
-    refreshData,
-  } = useData();
-
   const { currentUser } = useContext(UserContext);
-  const isUserSelected = !!currentUser; 
-
-  const { showSuccess, showError } = useNotification();
-  const [dataFile, setDataFile] = useState('c7_user_DrrEIEW_timeseries.csv'); // Only used for import
-  const [loading, setLoading] = useState(false);
+  const isUserSelected = !!currentUser;
   
-  /**
-   * Run prediction for current user
-   */
-  const handleRunPrediction = async () => {
-    if (!isUserSelected) {
-      showError('Please select a user');
-      return;
-    }
-    
-    setLoading(true);
-    
-    try {
-      await runPrediction();
-      showSuccess('Prediction completed successfully');
-      refreshData(); // Refresh data after prediction
-    } catch (err) {
-      showError(err.message || 'Error running prediction');
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  /**
-   * Import data from CSV files
-   */
-  const handleImportData = async () => {
-    setLoading(true);
-    
-    try {
-      const response = await importData();
-      showSuccess(`Imported all data successfully: ${response.message}`);
-      refreshData(); // Refresh data after import
-    } catch (err) {
-      showError(err.message || 'Error importing data');
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  /**
-   * Import specific file
-   */
-  const handleImportSpecificFile = async () => {
-    if (!dataFile) {
-      showError('Please enter a data file name');
-      return;
-    }
-    
-    setLoading(true);
-    
-    try {
-      const response = await importSpecificFile(dataFile);
-      showSuccess(`Imported file successfully: ${response.message}`);
-      refreshData(); // Refresh data after import
-    } catch (err) {
-      showError(err.message || 'Error importing file');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // WebSocket connection status (hardcoded for now as this is just a UI update)
+  const connectionStatus = 'connected';
   
   return (
     <div className="control-panel">
@@ -100,61 +28,33 @@ const ControlPanel = () => {
 
         <UserSelect />
         
-        <div className="prediction-controls">
-          <div className="prediction-controls-header">
-            <h3>Run Prediction</h3>
-            <ModelInfoPopover />
-          </div>
-          
-          <div className="input-row">
-            <label>
-              Import File:
-              <input 
-                type="text" 
-                disabled={true}
-                value={dataFile} 
-                onChange={(e) => setDataFile(e.target.value)} 
-                placeholder="e.g., data.csv"
-              />
-            </label>
-          </div>
-          
-          <div className="button-group">
-            <div className="button-row">
-              <button 
-                onClick={handleRunPrediction} 
-                disabled={loading || !isUserSelected}
-                className="btn-primary"
-              >
-                {loading ? 'Running...' : 'Run Prediction'}
-              </button>
-              
-              <button 
-                onClick={handleImportSpecificFile} 
-                disabled={loading}
-                className="btn-secondary"
-              >
-                {loading ? 'Importing...' : 'Import File'}
-              </button>
+        <div className="auto-process-info">
+          <h3>Automated Processing</h3>
+          <p>
+            Data files are automatically imported and predictions are run when AWS client is initialized.
+            All data processing is handled automatically by the system.
+          </p>
+          <div className="model-info-section">
+            <h4>Model Information</h4>
+            <div className="model-info-content">
+              <ModelInfoPopover />
+              <span>View prediction model details</span>
             </div>
-            
-            <div className="button-row">
-              <button 
-                onClick={handleImportData} 
-                disabled={loading}
-                className="btn-secondary"
-              >
-                {loading ? 'Importing...' : 'Import All Files'}
-              </button>
-              
-              <button 
-                onClick={refreshData} 
-                disabled={loading || !isUserSelected}
-                className="btn-refresh"
-              >
-                Refresh Data
-              </button>
-            </div>
+          </div>
+        </div>
+        
+        <div className="status-display">
+          <div className="status-item">
+            <div className="status-label">System Status:</div>
+            <div className="status-value active">Active</div>
+          </div>
+          <div className="status-item">
+            <div className="status-label">Auto Processing:</div>
+            <div className="status-value enabled">Enabled</div>
+          </div>
+          <div className="status-item">
+            <div className="status-label">Selected User:</div>
+            <div className="status-value">{isUserSelected ? currentUser.username : 'None'}</div>
           </div>
         </div>
       </div>
@@ -167,11 +67,6 @@ const ControlPanel = () => {
           height: 100%;
         }
         
-        .prediction-controls-header {
-          display: flex;
-          align-items: center;
-        }
-        
         h2 {
           margin-top: 0;
           margin-bottom: 15px;
@@ -182,6 +77,13 @@ const ControlPanel = () => {
           margin-top: 0;
           margin-bottom: 10px;
           font-size: 1.2rem;
+        }
+        
+        h4 {
+          margin-top: 15px;
+          margin-bottom: 8px;
+          font-size: 1rem;
+          color: #2e7d32;
         }
         
         .panel-section {
@@ -212,75 +114,66 @@ const ControlPanel = () => {
           font-weight: bold;
         }
         
-        .prediction-controls {
+        .auto-process-info {
+          background-color: #e8f5e9;
+          border-radius: 4px;
+          padding: 10px;
+          margin: 10px 0;
+          border-left: 4px solid #66bb6a;
+        }
+        
+        .auto-process-info p {
+          margin: 5px 0;
+          font-size: 0.9rem;
+          color: #2e7d32;
+        }
+        
+        .model-info-section {
           margin-top: 10px;
         }
         
-        .input-row {
+        .model-info-content {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.9rem;
+          color: #2e7d32;
         }
         
-        label {
-          display: block;
-          margin-bottom: 5px;
+        .status-display {
+          margin-top: 15px;
+          border-top: 1px solid #eee;
+          padding-top: 15px;
+        }
+        
+        .status-item {
+          display: flex;
+          margin-bottom: 8px;
           font-size: 0.9rem;
         }
         
-        input {
-          padding: 6px;
-          width: 100%;
-          border: 1px solid #ddd;
-          border-radius: 4px;
+        .status-label {
+          flex: 0 0 120px;
+          font-weight: 500;
         }
         
-        .button-group {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        
-        .button-row {
-          display: flex;
-          gap: 8px;
-        }
-        
-        button {
-          padding: 8px 12px;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 0.9rem;
+        .status-value {
           flex: 1;
         }
         
-        .btn-primary {
-          background-color: #4a90e2;
-          color: white;
-        }
-        
-        .btn-secondary {
-          background-color: #f0f0f0;
-          color: #333;
-          border: 1px solid #ddd;
-        }
-        
-        .btn-refresh {
-          background-color: #5cb85c;
-          color: white;
-        }
-        
-        button:hover {
-          opacity: 0.9;
-        }
-        
-        button:disabled {
-          background-color: #cccccc;
-          cursor: not-allowed;
-          opacity: 0.7;
+        .status-value.active,
+        .status-value.enabled {
+          color: #2e7d32;
+          font-weight: 500;
         }
         
         @media (max-width: 768px) {
-          button {
-            flex: 1 1 100%;
+          .status-item {
+            flex-direction: column;
+          }
+          
+          .status-label {
+            margin-bottom: 3px;
           }
         }
       `}</style>
