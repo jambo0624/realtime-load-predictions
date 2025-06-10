@@ -9,6 +9,7 @@ const dataRoutes = require('./routes/dataRoutes');
 const cloudRoutes = require('./routes/cloudRoutes');
 const websocketService = require('./services/websocketService');
 const predictionService = require('./services/predictionService');
+const cloudService = require('./services/cloudService');
 
 // Create Express app
 const app = express();
@@ -127,6 +128,31 @@ schedule.scheduleJob('0 0 * * *', async function() {
   } catch (err) {
     logger.error('Daily data reset process failed:', err);
   }
+});
+
+// Graceful shutdown handler
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM signal received: closing HTTP server');
+  
+  // Stop all prediction polling jobs
+  cloudService.stopAllPollingJobs();
+  
+  // Close server
+  server.close(() => {
+    logger.info('HTTP server closed');
+  });
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT signal received: closing HTTP server');
+  
+  // Stop all prediction polling jobs
+  cloudService.stopAllPollingJobs();
+  
+  // Close server
+  server.close(() => {
+    logger.info('HTTP server closed');
+  });
 });
 
 // Start the server

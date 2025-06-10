@@ -1,7 +1,44 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 import { useNotification } from "../context/NotificationContext";
 import apiService from "../api/apiService";
 import { UserContext } from "../context/UserContext";
+import { Popover, Text, Stack } from "@mantine/core";
+
+/**
+ * Popover component with information about predictive scaling
+ */
+const PredictiveScalingInfoPopover = () => {
+  return (
+    <Popover
+      width={320}
+      position="right"
+      shadow="md"
+      withArrow
+      arrowPosition="center"
+    >
+      <Popover.Target>
+        <div className="info-icon-button" title="Predictive Scaling Information">
+          <span>ℹ️</span>
+        </div>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Stack p="md" spacing="xs">
+          <Text fw={600} size="md">Predictive Scaling</Text>
+          <Text size="sm">
+            Predictive scaling uses ML models trained on the past month of usage data
+            to forecast future resource needs. The system automatically calculates
+            optimal instance count based on predicted CPU usage patterns and applies
+            scaling at 15-minute intervals.
+          </Text>
+          <Text size="sm" mt={5}>
+            This ensures resources are provisioned ahead of demand,
+            preventing both over-provisioning and performance issues.
+          </Text>
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
+  );
+};
 
 /**
  * Resource Management component for configuring AWS resources
@@ -12,6 +49,7 @@ const ResourceManagement = () => {
 
   const { showSuccess, showError } = useNotification();
   const [loading, setLoading] = useState(false);
+  const [loadingStrategy, setLoadingStrategy] = useState(false);
 
   // Region selection
   const [region, setRegion] = useState("us-east-1");
@@ -28,6 +66,63 @@ const ResourceManagement = () => {
   // Threshold Configuration
   const [cpuThreshold, setCpuThreshold] = useState(70);
   const [memoryThreshold, setMemoryThreshold] = useState(70);
+
+  // State for tracking predictive polling status
+  const [predictionPollingActive, setPredictionPollingActive] = useState(false);
+  const [predictionPollingInterval, setPredictionPollingInterval] = useState(null);
+
+  // Load current strategy when user changes
+  useEffect(() => {
+    if (currentUser?.id) {
+      loadCurrentStrategy(currentUser.id);
+    }
+  }, [currentUser]);
+
+  // Load current strategy from backend
+  const loadCurrentStrategy = async (userId) => {
+    if (!userId) return;
+    
+    setLoadingStrategy(true);
+    try {
+      const response = await apiService.getCurrentStrategy(userId);
+      
+      if (response.status === 'success' && response.data) {
+        const strategyData = response.data;
+        
+        // Update UI with current strategy
+        setScalingStrategy(strategyData.strategy || 'auto');
+        setRegion(strategyData.region || 'us-east-1');
+        
+        // Update resources if available
+        if (strategyData.resources) {
+          setCpuResources(strategyData.resources.cpu || 2);
+          setMemoryResources(strategyData.resources.memory || 4);
+          setMinInstances(strategyData.resources.minInstances || 1);
+          setMaxInstances(strategyData.resources.maxInstances || 5);
+        }
+        
+        // Update thresholds if available
+        if (strategyData.thresholds) {
+          setCpuThreshold(strategyData.thresholds.cpu || 70);
+          setMemoryThreshold(strategyData.thresholds.memory || 70);
+        }
+        
+        // Update polling status
+        setPredictionPollingActive(!!strategyData.isPollingActive);
+        setPredictionPollingInterval(
+          strategyData.result?.details?.pollingInterval || '15 minutes'
+        );
+        
+        console.log('Loaded current strategy:', strategyData.strategy);
+      } else {
+        console.log('No active strategy found for user');
+      }
+    } catch (error) {
+      console.error('Error loading current strategy:', error);
+    } finally {
+      setLoadingStrategy(false);
+    }
+  };
 
   // AWS regions list
   const awsRegions = [
@@ -67,6 +162,8 @@ const ResourceManagement = () => {
         thresholds: {
           cpu: cpuThreshold,
           memory: memoryThreshold,
+          userId: currentUser.id,
+          cpuThresholdPerInstance: 70,
         },
         region: region,
       };
@@ -75,6 +172,24 @@ const ResourceManagement = () => {
       const response = await apiService.applyResourceStrategy(strategyData);
 
       showSuccess(response.message || "Resource strategy applied successfully");
+      
+      // Show additional details for predictive strategy
+      if (scalingStrategy === 'predictive' && response.data?.details) {
+        const details = response.data.details;
+        // Update polling status
+        setPredictionPollingActive(!!details.pollingEnabled);
+        setPredictionPollingInterval(details.pollingInterval || null);
+        
+        if (details.predictedMaxCpu) {
+          showSuccess(`Predictive scaling applied based on ML predictions. 
+            Peak CPU: ${details.predictedMaxCpu.toFixed(1)}%, 
+            Instances: ${details.appliedInstances}`);
+        }
+      } else {
+        // Reset polling status for non-predictive strategies
+        setPredictionPollingActive(false);
+        setPredictionPollingInterval(null);
+      }
     } catch (err) {
       showError(err.message || "Error applying resource strategy");
     } finally {
@@ -85,7 +200,16 @@ const ResourceManagement = () => {
   return (
     <>
       <div className="resource-management">
-        <h2>AWS Resource Management</h2>
+        <div className="header-with-info">
+          <h2>AWS Resource Management</h2>
+          <PredictiveScalingInfoPopover />
+        </div>
+        
+        {loadingStrategy && (
+          <div className="loading-indicator">
+            <span>Loading current strategy...</span>
+          </div>
+        )}
 
         <div className="settings-container">
           <div className="settings-section strategy-settings">
@@ -121,10 +245,20 @@ const ResourceManagement = () => {
               </div>
             </div>
 
+            {scalingStrategy === "predictive" && predictionPollingActive && (
+              <div className="prediction-info">
+                {predictionPollingActive && (
+                  <div className="polling-status">
+                    <span className="polling-indicator active"></span>
+                    <span>Active polling every {predictionPollingInterval}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="settings-group">
               {scalingStrategy === "manual" && (
                 <>
-                  <h4 className="configuration-title">Manual Configuration</h4>
                   <div className="input-row">
                     <div className="input-group">
                       <label>
@@ -329,6 +463,46 @@ const ResourceManagement = () => {
           border: 1px solid #eaeaea;
         }
 
+        .prediction-info {
+          background-color: #f0f7ff;
+          border: 1px solid #d0e5ff;
+          border-radius: 4px;
+          padding: 10px 12px;
+          margin: 10px 0;
+          font-size: 0.85rem;
+          color: #2c5282;
+        }
+
+        .polling-status {
+          display: flex;
+          align-items: center;
+        }
+        
+        .polling-indicator {
+          display: inline-block;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          margin-right: 6px;
+        }
+        
+        .polling-indicator.active {
+          background-color: #48bb78;
+          box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.2);
+        }
+
+        .loading-indicator {
+          background-color: #edf2f7;
+          border-radius: 4px;
+          padding: 8px 12px;
+          margin-bottom: 12px;
+          font-size: 0.85rem;
+          color: #4a5568;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
         .action-buttons {
           margin-top: 15px;
           display: flex;
@@ -352,6 +526,38 @@ const ResourceManagement = () => {
         .btn-primary:disabled {
           background-color: #a0a0a0;
           cursor: not-allowed;
+        }
+
+        .header-with-info {
+          display: flex;
+          align-items: center;
+          margin-bottom: 15px;
+        }
+
+        .header-with-info h2 {
+          margin: 0;
+          margin-right: 10px;
+          font-size: 1.2rem;
+          color: #2c3e50;
+        }
+        
+        .info-icon-button {
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          font-size: 1rem;
+          padding: 0;
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: background-color 0.2s;
+        }
+        
+        .info-icon-button:hover {
+          background-color: rgba(0, 0, 0, 0.05);
         }
 
         @media (max-width: 768px) {

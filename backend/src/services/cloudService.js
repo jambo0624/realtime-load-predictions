@@ -1,9 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const { promisify } = require('util');
 const dayjs = require('dayjs');
 const logger = require('../utils/logger');
-const db = require('../utils/db');
+const predictionService = require('./predictionService');
 
 // Try to use dotenv for local development if needed
 try {
@@ -57,6 +56,12 @@ class CloudService {
     // Initialize AWS clients cache
     this.awsClients = {};
     
+    // Store active prediction polling jobs (userId -> intervalId)
+    this.predictionPollingJobs = {};
+    
+    // Track active strategies per user
+    this.userStrategies = {};
+    
     // Initialize on startup to speed up later requests
     this.initializeDefaultClient();
   }
@@ -86,11 +91,39 @@ class CloudService {
     try {
       logger.info(`Applying ${strategy} scaling strategy in region ${region}`);
       
+      // Get user ID for tracking polling jobs
+      const userId = thresholds?.userId;
+      
+      // If changing from predictive to another strategy, stop any existing polling
+      if (strategy !== 'predictive' && userId && this.predictionPollingJobs[userId]) {
+        this._stopPredictivePolling(userId);
+      }
+      
       // Initialize clients for this region
       await this._initializeAwsClient(null, region);
       
       // Apply strategy
       let result = await this._applyAwsStrategy(strategy, resources, thresholds);
+      
+      // If predictive strategy and has userId, start polling
+      if (strategy === 'predictive' && userId) {
+        // Start or restart polling job
+        this._startPredictivePolling(userId, resources, thresholds, region);
+      }
+      
+      // Store the current strategy for this user
+      if (userId) {
+        this.userStrategies[userId] = {
+          strategy,
+          resources,
+          thresholds,
+          region,
+          timestamp: dayjs().toDate(),
+          result: { ...result }
+        };
+        
+        logger.info(`Stored ${strategy} strategy settings for user ${userId}`);
+      }
       
       return {
         ...result,
@@ -101,6 +134,85 @@ class CloudService {
       logger.error(`Error applying AWS strategy:`, error);
       throw new Error(`Failed to apply AWS strategy: ${error.message}`);
     }
+  }
+  
+  /**
+   * Get current resource strategy for a user
+   * @param {number} userId - User ID
+   * @returns {Object|null} - Current strategy or null if not found
+   */
+  getCurrentStrategy(userId) {
+    if (!userId || !this.userStrategies[userId]) {
+      return null;
+    }
+    
+    return {
+      ...this.userStrategies[userId],
+      isPollingActive: !!this.predictionPollingJobs[userId]
+    };
+  }
+  
+  /**
+   * Start predictive polling for a user
+   * @param {number} userId - User ID
+   * @param {Object} resources - Resource configuration
+   * @param {Object} thresholds - Threshold configuration
+   * @param {string} region - AWS region
+   * @private
+   */
+  _startPredictivePolling(userId, resources, thresholds, region) {
+    // Stop any existing polling job for this user
+    this._stopPredictivePolling(userId);
+    
+    logger.info(`Starting predictive scaling polling for user ${userId} in region ${region}`);
+    
+    // Create polling job (every 15 minutes)
+    const pollingInterval = 15 * 60 * 1000;
+    
+    this.predictionPollingJobs[userId] = setInterval(async () => {
+      try {
+        logger.info(`Running scheduled predictive scaling update for user ${userId}`);
+        
+        // Reinitialize client if needed
+        await this._initializeAwsClient(null, region);
+        
+        // Apply predictive strategy
+        await this._applyAwsStrategy('predictive', resources, thresholds);
+        
+        logger.info(`Completed scheduled predictive scaling update for user ${userId}`);
+      } catch (error) {
+        logger.error(`Error in predictive scaling polling for user ${userId}:`, error);
+      }
+    }, pollingInterval);
+    
+    logger.info(`Predictive scaling polling started for user ${userId}, interval: ${pollingInterval}ms`);
+  }
+  
+  /**
+   * Stop predictive polling for a user
+   * @param {number} userId - User ID
+   * @private
+   */
+  _stopPredictivePolling(userId) {
+    if (this.predictionPollingJobs[userId]) {
+      logger.info(`Stopping predictive scaling polling for user ${userId}`);
+      clearInterval(this.predictionPollingJobs[userId]);
+      delete this.predictionPollingJobs[userId];
+    }
+  }
+  
+  /**
+   * Stop all prediction polling jobs
+   * This should be called when shutting down the server
+   */
+  stopAllPollingJobs() {
+    logger.info(`Stopping all predictive scaling polling jobs: ${Object.keys(this.predictionPollingJobs).length} active jobs`);
+    
+    for (const userId in this.predictionPollingJobs) {
+      this._stopPredictivePolling(userId);
+    }
+    
+    logger.info('All predictive scaling polling jobs stopped');
   }
   
   // Private methods
@@ -291,46 +403,155 @@ class CloudService {
           };
           
         case 'predictive':
-          // Configure predictive scaling
+          // Use ML predictions to determine required resources
           const predictiveASGName = 'app-predictive-scaling-group';
           
-          // Create a predictive scaling policy
-          try {
-            const predictivePolicyCommand = new client.autoScalingCommands.PutScalingPolicyCommand({
-              AutoScalingGroupName: predictiveASGName,
-              PolicyName: 'cpu-predictive-scaling-policy',
-              PolicyType: 'PredictiveScaling',
-              PredictiveScalingConfiguration: {
-                MetricSpecifications: [
-                  {
-                    TargetValue: thresholds?.cpuTarget || 70,
-                    PredefinedMetricPairSpecification: {
-                      PredefinedMetricType: 'ASGCPUUtilization'
-                    }
-                  }
-                ],
-                Mode: 'ForecastAndScale'
+          // Get user ID from thresholds (frontend should pass this)
+          const userId = thresholds?.userId;
+          
+          if (!userId) {
+            logger.warn('No user ID provided for predictive scaling. Using default settings.');
+            return {
+              provider: 'aws',
+              strategy: 'predictive',
+              configured: true,
+              timestamp,
+              details: {
+                cpuBuffer: thresholds?.cpuBuffer || 20,
+                memoryBuffer: thresholds?.memoryBuffer || 20,
+                minInstances: thresholds?.minInstances || 1,
+                maxInstances: thresholds?.maxInstances || 10,
+                message: 'Used default settings (no user ID provided)'
               }
-            });
-            
-            await client.autoscaling.send(predictivePolicyCommand);
-            logger.info(`Configured predictive scaling for group: ${predictiveASGName}`);
-          } catch (err) {
-            logger.warn(`Predictive scaling configuration failed: ${err.message}`);
+            };
           }
           
-          return {
-            provider: 'aws',
-            strategy: 'predictive',
-            configured: true,
-            timestamp,
-            details: {
-              cpuBuffer: thresholds?.cpuBuffer || 20,
-              memoryBuffer: thresholds?.memoryBuffer || 20,
-              minInstances: thresholds?.minInstances || 1,
-              maxInstances: thresholds?.maxInstances || 10
+          try {
+            // Get CPU predictions for the next 4 hours (80 predictions with 3-minute intervals)
+            logger.info(`Fetching ML predictions for user ${userId} to apply predictive scaling`);
+            const cpuPredictions = await predictionService.getLatestPredictions('cpu', 80, userId);
+            
+            if (!cpuPredictions || cpuPredictions.length === 0) {
+              logger.warn(`No predictions found for user ${userId}. Using default settings.`);
+              return {
+                provider: 'aws',
+                strategy: 'predictive',
+                configured: true,
+                timestamp,
+                details: {
+                  cpuBuffer: thresholds?.cpuBuffer || 20,
+                  memoryBuffer: thresholds?.memoryBuffer || 20,
+                  minInstances: thresholds?.minInstances || 1,
+                  maxInstances: thresholds?.maxInstances || 10,
+                  message: 'Used default settings (no predictions found)'
+                }
+              };
             }
-          };
+            
+            // Calculate resources required based on CPU predictions
+            const cpuValues = cpuPredictions.map(p => parseFloat(p.average_usage_cpu));
+            const maxCpuPredicted = Math.max(...cpuValues);
+            const avgCpuPredicted = cpuValues.reduce((sum, val) => sum + val, 0) / cpuValues.length;
+            
+            logger.info(`ML predictions analysis: Max CPU: ${maxCpuPredicted.toFixed(2)}%, Avg CPU: ${avgCpuPredicted.toFixed(2)}%`);
+            
+            // Calculate required instances based on CPU predictions
+            // Apply buffer for safety margin
+            const cpuBuffer = thresholds?.cpuBuffer || 20; // Default 20% buffer
+            const cpuThresholdPerInstance = thresholds?.cpuThresholdPerInstance || 70; // Target CPU per instance
+            
+            // Calculate instances needed for the peak load with buffer
+            const peakCpuWithBuffer = maxCpuPredicted * (1 + cpuBuffer / 100);
+            const recommendedInstances = Math.ceil(peakCpuWithBuffer / cpuThresholdPerInstance);
+            
+            // Ensure within min/max bounds
+            const minInstances = thresholds?.minInstances || 1;
+            const maxInstances = thresholds?.maxInstances || 10;
+            const scaledInstances = Math.min(Math.max(recommendedInstances, minInstances), maxInstances);
+            
+            logger.info(`Predictive scaling calculation: Peak CPU with ${cpuBuffer}% buffer: ${peakCpuWithBuffer.toFixed(2)}%`);
+            logger.info(`Recommended instances: ${recommendedInstances}, Scaled to: ${scaledInstances} (min: ${minInstances}, max: ${maxInstances})`);
+            
+            // Apply the calculated scaling to the auto scaling group
+            try {
+              const updateCommand = new client.autoScalingCommands.UpdateAutoScalingGroupCommand({
+                AutoScalingGroupName: predictiveASGName,
+                MinSize: scaledInstances,
+                MaxSize: scaledInstances + 2, // Allow some room for unexpected spikes
+                DesiredCapacity: scaledInstances
+              });
+              
+              await client.autoscaling.send(updateCommand);
+              logger.info(`Applied predictive scaling to group: ${predictiveASGName} with ${scaledInstances} instances`);
+            } catch (err) {
+              logger.warn(`Predictive scaling application failed: ${err.message}`);
+            }
+            
+            return {
+              provider: 'aws',
+              strategy: 'predictive',
+              configured: true,
+              timestamp,
+              details: {
+                cpuBuffer: cpuBuffer,
+                predictedMaxCpu: maxCpuPredicted,
+                predictedAvgCpu: avgCpuPredicted,
+                minInstances: minInstances,
+                maxInstances: maxInstances,
+                recommendedInstances: recommendedInstances,
+                appliedInstances: scaledInstances,
+                predictionCount: cpuPredictions.length,
+                predictionTimeRange: {
+                  start: cpuPredictions[0].time_dt,
+                  end: cpuPredictions[cpuPredictions.length - 1].time_dt
+                },
+                pollingEnabled: true,
+                pollingInterval: '15 minutes'
+              }
+            };
+          } catch (err) {
+            logger.error(`Error applying ML-based predictive scaling: ${err.message}`, err);
+            
+            // Fallback to AWS native predictive scaling if ML predictions fail
+            try {
+              const predictivePolicyCommand = new client.autoScalingCommands.PutScalingPolicyCommand({
+                AutoScalingGroupName: predictiveASGName,
+                PolicyName: 'cpu-predictive-scaling-policy',
+                PolicyType: 'PredictiveScaling',
+                PredictiveScalingConfiguration: {
+                  MetricSpecifications: [
+                    {
+                      TargetValue: thresholds?.cpuTarget || 70,
+                      PredefinedMetricPairSpecification: {
+                        PredefinedMetricType: 'ASGCPUUtilization'
+                      }
+                    }
+                  ],
+                  Mode: 'ForecastAndScale'
+                }
+              });
+              
+              await client.autoscaling.send(predictivePolicyCommand);
+              logger.info(`Fell back to AWS native predictive scaling for group: ${predictiveASGName}`);
+            } catch (fallbackErr) {
+              logger.warn(`AWS native predictive scaling fallback failed: ${fallbackErr.message}`);
+            }
+            
+            return {
+              provider: 'aws',
+              strategy: 'predictive',
+              configured: true,
+              timestamp,
+              details: {
+                cpuBuffer: thresholds?.cpuBuffer || 20,
+                memoryBuffer: thresholds?.memoryBuffer || 20,
+                minInstances: thresholds?.minInstances || 1,
+                maxInstances: thresholds?.maxInstances || 10,
+                error: err.message,
+                message: 'Used fallback settings due to prediction error'
+              }
+            };
+          }
           
         default:
           throw new Error(`Unknown AWS strategy: ${strategy}`);

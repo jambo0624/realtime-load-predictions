@@ -139,6 +139,25 @@ class ApiService {
   }
 
   /**
+   * Get current resource strategy for a user
+   * @param {number} userId - User ID
+   * @returns {Promise} - Promise with result
+   */
+  async getCurrentStrategy(userId) {
+    try {
+      const response = await axios.get(`${CLOUD_API_URL}/strategy/${userId}`);
+      return response.data;
+    } catch (error) {
+      // Don't throw error for 404 (no strategy found)
+      if (error.response && error.response.status === 404) {
+        return { status: 'info', data: null };
+      }
+      console.error('Error getting current strategy:', error);
+      throw this._handleApiError(error);
+    }
+  }
+
+  /**
    * Reset data for a specific user
    * @param {string} username - Username 
    * @param {boolean} runPrediction - Whether to run predictions after reset
