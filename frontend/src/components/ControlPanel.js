@@ -1,17 +1,13 @@
-import React, { useContext } from 'react';
-import { UserContext } from '../context/UserContext';
-import UserSelect from './UserSelect';
+import React from 'react';
 import ModelInfoPopover from './ModelInfoPopover';
-
+import useData from '../hooks/useData';
 /**
  * Control panel component showing status and information
  */
 const ControlPanel = () => {
-  const { currentUser } = useContext(UserContext);
-  const isUserSelected = !!currentUser;
-  
-  // WebSocket connection status (hardcoded for now as this is just a UI update)
-  const connectionStatus = 'connected';
+  const {
+    connectionStatus, 
+  } = useData();
   
   return (
     <div className="control-panel">
@@ -26,24 +22,7 @@ const ControlPanel = () => {
           </div>
         </div>
 
-        <UserSelect />
-        
-        <div className="auto-process-info">
-          <h3>Automated Processing</h3>
-          <p>
-            Data files are automatically imported and predictions are run when AWS client is initialized.
-            All data processing is handled automatically by the system.
-          </p>
-          <div className="model-info-section">
-            <h4>Model Information</h4>
-            <div className="model-info-content">
-              <ModelInfoPopover />
-              <span>View prediction model details</span>
-            </div>
-          </div>
-        </div>
-        
-        <div className="status-display">
+        <div>
           <div className="status-item">
             <div className="status-label">System Status:</div>
             <div className="status-value active">Active</div>
@@ -52,9 +31,20 @@ const ControlPanel = () => {
             <div className="status-label">Auto Processing:</div>
             <div className="status-value enabled">Enabled</div>
           </div>
-          <div className="status-item">
-            <div className="status-label">Selected User:</div>
-            <div className="status-value">{isUserSelected ? currentUser.username : 'None'}</div>
+        </div>
+
+        <div className="auto-process-info">
+          <h3>Automated Processing</h3>
+          <p>
+            Historical data is automatically imported and predictions are run when AWS client is initialized.
+            All data processing is handled automatically by the system.
+          </p>
+          <div className="model-info-section">
+            <h4>Model Information</h4>
+            <div className="model-info-content">
+              <ModelInfoPopover />
+              <span>View prediction model details</span>
+            </div>
           </div>
         </div>
       </div>
@@ -75,12 +65,12 @@ const ControlPanel = () => {
         
         h3 {
           margin-top: 0;
-          margin-bottom: 10px;
+          margin-bottom: 0px;
           font-size: 1.2rem;
         }
         
         h4 {
-          margin-top: 15px;
+          margin-top: 10px;
           margin-bottom: 8px;
           font-size: 1rem;
           color: #2e7d32;
@@ -97,7 +87,7 @@ const ControlPanel = () => {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 15px;
+          margin-bottom: 9px;
         }
         
         .connection-status {
@@ -140,12 +130,6 @@ const ControlPanel = () => {
           color: #2e7d32;
         }
         
-        .status-display {
-          margin-top: 15px;
-          border-top: 1px solid #eee;
-          padding-top: 15px;
-        }
-        
         .status-item {
           display: flex;
           margin-bottom: 8px;
@@ -175,6 +159,10 @@ const ControlPanel = () => {
           .status-label {
             margin-bottom: 3px;
           }
+        }
+        
+        .info-button {
+          margin-bottom: 0;
         }
       `}</style>
     </div>
