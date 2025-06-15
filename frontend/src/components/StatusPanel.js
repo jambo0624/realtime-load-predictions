@@ -4,14 +4,14 @@ import useData from '../hooks/useData';
 /**
  * Control panel component showing status and information
  */
-const ControlPanel = () => {
+const StatusPanel = () => {
   const {
     connectionStatus, 
   } = useData();
   
   return (
-    <div className="control-panel">
-      <h2>Control Panel</h2>
+    <div className="status-panel">
+      <h2>Status Panel</h2>
       
       <div className="panel-section">
         <div className="panel-header">
@@ -50,7 +50,7 @@ const ControlPanel = () => {
       </div>
       
       <style jsx>{`
-        .control-panel {
+        .status-panel {
           background-color: #f5f5f5;
           border-radius: 4px;
           padding: 15px;
@@ -169,4 +169,4 @@ const ControlPanel = () => {
   );
 };
 
-export default ControlPanel; 
+export default StatusPanel; 

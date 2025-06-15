@@ -1,6 +1,6 @@
 import React, { useContext } from "react";
 import LoadChart from "../components/LoadChart";
-import ControlPanel from "../components/ControlPanel";
+import StatusPanel from "../components/StatusPanel";
 import Notifications from "../components/Notifications";
 import ResourceManagement from "../components/ResourceManagement";
 import useData from "../hooks/useData";
@@ -32,7 +32,7 @@ const Dashboard = () => {
 
       <div className="control-resource-container">
         <div className="control-panel-wrapper">
-          <ControlPanel />
+          <StatusPanel />
         </div>
         <div className="resource-management-wrapper">
           <ResourceManagement />
