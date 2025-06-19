@@ -519,7 +519,7 @@ class CloudService {
           }
           
           try {
-            // Get CPU and Memory predictions for the next 4 hours (80 predictions with 3-minute intervals)
+            // Get CPU and Memory predictions for the next 4 hours (80 predictions)
             logger.info(`Fetching ML predictions for user ${userId} to apply predictive scaling`);
             const cpuPredictions = await predictionService.getLatestPredictions('cpu', 80, userId);
             const memoryPredictions = await predictionService.getLatestPredictions('memory', 80, userId);
