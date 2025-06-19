@@ -26,9 +26,13 @@ const PredictiveScalingInfoPopover = () => {
           <Text fw={600} size="md">Predictive Scaling</Text>
           <Text size="sm">
             Predictive scaling uses ML models trained on the past month of usage data
-            to forecast future resource needs. The system automatically calculates
-            optimal instance count based on predicted CPU usage patterns and applies
-            scaling at 15-minute intervals.
+            to forecast future CPU and Memory resource needs. The system automatically 
+            calculates optimal instance count based on predicted usage patterns for both 
+            metrics and applies scaling at 15-minute intervals.
+          </Text>
+          <Text size="sm" mt={5}>
+            The system takes the maximum of CPU-based and Memory-based instance requirements
+            to ensure adequate resources. Safety buffers can be configured to handle unexpected spikes.
           </Text>
           <Text size="sm" mt={5}>
             This ensures resources are provisioned ahead of demand,
@@ -66,6 +70,10 @@ const ResourceManagement = () => {
   // Threshold Configuration
   const [cpuThreshold, setCpuThreshold] = useState(70);
   const [memoryThreshold, setMemoryThreshold] = useState(70);
+  
+  // Buffer Configuration for Predictive Scaling
+  const [cpuBuffer, setCpuBuffer] = useState(20);
+  const [memoryBuffer, setMemoryBuffer] = useState(20);
 
   // State for tracking predictive polling status
   const [predictionPollingActive, setPredictionPollingActive] = useState(false);
@@ -103,8 +111,10 @@ const ResourceManagement = () => {
         
         // Update thresholds if available
         if (strategyData.thresholds) {
-          setCpuThreshold(strategyData.thresholds.cpu || 70);
-          setMemoryThreshold(strategyData.thresholds.memory || 70);
+          setCpuThreshold(strategyData.thresholds.cpuThreshold || strategyData.thresholds.cpu || 70);
+          setMemoryThreshold(strategyData.thresholds.memoryThreshold || strategyData.thresholds.memory || 70);
+          setCpuBuffer(strategyData.thresholds.cpuBuffer || 20);
+          setMemoryBuffer(strategyData.thresholds.memoryBuffer || 20);
         }
         
         // Update polling status
@@ -160,10 +170,15 @@ const ResourceManagement = () => {
           maxInstances,
         },
         thresholds: {
-          cpu: cpuThreshold,
-          memory: memoryThreshold,
+          cpuThreshold: cpuThreshold,
+          memoryThreshold: memoryThreshold,
           userId: currentUser.id,
           cpuThresholdPerInstance: 70,
+          memoryThresholdPerInstance: 70,
+          cpuBuffer: cpuBuffer, // CPU prediction buffer for predictive scaling
+          memoryBuffer: memoryBuffer, // Memory prediction buffer for predictive scaling
+          minInstances,
+          maxInstances,
         },
         region: region,
       };
@@ -180,10 +195,20 @@ const ResourceManagement = () => {
         setPredictionPollingActive(!!details.pollingEnabled);
         setPredictionPollingInterval(details.pollingInterval || null);
         
+        if (details.predictedMaxCpu || details.predictedMaxMemory) {
+          let message = `Predictive scaling applied based on ML predictions.\n`;
+        
         if (details.predictedMaxCpu) {
-          showSuccess(`Predictive scaling applied based on ML predictions. 
-            Peak CPU: ${details.predictedMaxCpu.toFixed(1)}%, 
-            Instances: ${details.appliedInstances}`);
+            message += `Peak CPU: ${details.predictedMaxCpu.toFixed(1)}% → ${details.cpuBasedInstances || 'N/A'} instances\n`;
+          }
+          
+          if (details.predictedMaxMemory) {
+            message += `Peak Memory: ${details.predictedMaxMemory.toFixed(1)}% → ${details.memoryBasedInstances || 'N/A'} instances\n`;
+          }
+          
+          message += `Final: ${details.appliedInstances} instances (${details.recommendedInstances} recommended)`;
+          
+          showSuccess(message);
         }
       } else {
         // Reset polling status for non-predictive strategies
@@ -374,6 +399,45 @@ const ResourceManagement = () => {
                       </label>
                     </div>
                   </div>
+
+                  {scalingStrategy === "predictive" && (
+                    <div className="prediction-config">
+                      <h4>Predictive Scaling Configuration</h4>
+                      <div className="input-row">
+                        <div className="input-group">
+                          <label>
+                            CPU Buffer (%):
+                            <input
+                              type="number"
+                              min="5"
+                              max="50"
+                              value={cpuBuffer}
+                              onChange={(e) =>
+                                setCpuBuffer(parseInt(e.target.value))
+                              }
+                            />
+                            <small>Safety margin for CPU predictions</small>
+                          </label>
+                        </div>
+
+                        <div className="input-group">
+                          <label>
+                            Memory Buffer (%):
+                            <input
+                              type="number"
+                              min="5"
+                              max="50"
+                              value={memoryBuffer}
+                              onChange={(e) =>
+                                setMemoryBuffer(parseInt(e.target.value))
+                              }
+                            />
+                            <small>Safety margin for Memory predictions</small>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -489,6 +553,28 @@ const ResourceManagement = () => {
         .polling-indicator.active {
           background-color: #48bb78;
           box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.2);
+        }
+
+        .prediction-config {
+          background-color: #f8f9fa;
+          border: 1px solid #e9ecef;
+          border-radius: 4px;
+          padding: 12px;
+          margin-top: 12px;
+        }
+
+        .prediction-config h4 {
+          margin: 0 0 10px 0;
+          font-size: 0.9rem;
+          color: #495057;
+          font-weight: 600;
+        }
+
+        .prediction-config small {
+          display: block;
+          color: #6c757d;
+          font-size: 0.75rem;
+          margin-top: 2px;
         }
 
         .loading-indicator {

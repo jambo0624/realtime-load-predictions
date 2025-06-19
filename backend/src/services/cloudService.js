@@ -385,11 +385,14 @@ class CloudService {
             logger.info(`Updated auto scaling group: ${autoScalingGroupName}`);
           }
           
-          // Configure scaling policies based on CPU utilization
-          const policyName = 'cpu-target-tracking-policy';
-          const putScalingPolicyCommand = new client.autoScalingCommands.PutScalingPolicyCommand({
+          // Configure scaling policies based on CPU and Memory utilization
+          const policies = [];
+          
+          // CPU-based scaling policy
+          const cpuPolicyName = 'cpu-target-tracking-policy';
+          const cpuPolicyCommand = new client.autoScalingCommands.PutScalingPolicyCommand({
             AutoScalingGroupName: autoScalingGroupName,
-            PolicyName: policyName,
+            PolicyName: cpuPolicyName,
             PolicyType: 'TargetTrackingScaling',
             TargetTrackingConfiguration: {
               PredefinedMetricSpecification: {
@@ -400,8 +403,52 @@ class CloudService {
             EstimatedInstanceWarmup: 300
           });
           
-          await client.autoscaling.send(putScalingPolicyCommand);
-          logger.info(`Configured auto scaling policy: ${policyName}`);
+          policies.push({
+            command: cpuPolicyCommand,
+            name: cpuPolicyName,
+            type: 'CPU'
+          });
+          
+          // Memory-based scaling policy (if memory threshold is provided)
+          if (thresholds?.memoryThreshold) {
+            const memoryPolicyName = 'memory-target-tracking-policy';
+            const memoryPolicyCommand = new client.autoScalingCommands.PutScalingPolicyCommand({
+              AutoScalingGroupName: autoScalingGroupName,
+              PolicyName: memoryPolicyName,
+              PolicyType: 'TargetTrackingScaling',
+              TargetTrackingConfiguration: {
+                CustomizedMetricSpecification: {
+                  MetricName: 'MemoryUtilization',
+                  Namespace: 'AWS/EC2',
+                  Statistic: 'Average',
+                  Dimensions: [
+                    {
+                      Name: 'AutoScalingGroupName',
+                      Value: autoScalingGroupName
+                    }
+                  ]
+                },
+                TargetValue: thresholds.memoryThreshold
+              },
+              EstimatedInstanceWarmup: 300
+            });
+            
+            policies.push({
+              command: memoryPolicyCommand,
+              name: memoryPolicyName,
+              type: 'Memory'
+            });
+          }
+          
+          // Apply all policies
+          for (const policy of policies) {
+            try {
+              await client.autoscaling.send(policy.command);
+              logger.info(`Configured auto scaling policy: ${policy.name} (${policy.type})`);
+            } catch (policyError) {
+              logger.warn(`Failed to configure ${policy.type} policy: ${policyError.message}`);
+            }
+          }
           
           return {
             provider: 'aws',
@@ -472,12 +519,13 @@ class CloudService {
           }
           
           try {
-            // Get CPU predictions for the next 4 hours (80 predictions with 3-minute intervals)
+            // Get CPU and Memory predictions for the next 4 hours (80 predictions with 3-minute intervals)
             logger.info(`Fetching ML predictions for user ${userId} to apply predictive scaling`);
             const cpuPredictions = await predictionService.getLatestPredictions('cpu', 80, userId);
+            const memoryPredictions = await predictionService.getLatestPredictions('memory', 80, userId);
             
             if (!cpuPredictions || cpuPredictions.length === 0) {
-              logger.warn(`No predictions found for user ${userId}. Using default settings.`);
+              logger.warn(`No CPU predictions found for user ${userId}. Using default settings.`);
               return {
                 provider: 'aws',
                 strategy: 'predictive',
@@ -488,34 +536,62 @@ class CloudService {
                   memoryBuffer: thresholds?.memoryBuffer || 20,
                   minInstances: thresholds?.minInstances || 1,
                   maxInstances: thresholds?.maxInstances || 10,
-                  message: 'Used default settings (no predictions found)'
+                  message: 'Used default settings (no CPU predictions found)'
                 }
               };
             }
-            
+              
             // Calculate resources required based on CPU predictions
             const cpuValues = cpuPredictions.map(p => parseFloat(p.average_usage_cpu));
             const maxCpuPredicted = Math.max(...cpuValues);
             const avgCpuPredicted = cpuValues.reduce((sum, val) => sum + val, 0) / cpuValues.length;
             
-            logger.info(`ML predictions analysis: Max CPU: ${maxCpuPredicted.toFixed(2)}%, Avg CPU: ${avgCpuPredicted.toFixed(2)}%`);
+            // Calculate resources required based on Memory predictions (if available)
+            let maxMemoryPredicted = 0;
+            let avgMemoryPredicted = 0;
+            let memoryBasedInstances = 0;
             
-            // Calculate required instances based on CPU predictions
+            if (memoryPredictions && memoryPredictions.length > 0) {
+              const memoryValues = memoryPredictions.map(p => parseFloat(p.average_usage_memory));
+              maxMemoryPredicted = Math.max(...memoryValues);
+              avgMemoryPredicted = memoryValues.reduce((sum, val) => sum + val, 0) / memoryValues.length;
+              
+              // Calculate instances needed based on memory
+              const memoryBuffer = thresholds?.memoryBuffer || 20;
+              const memoryThresholdPerInstance = thresholds?.memoryThresholdPerInstance || 70;
+              const peakMemoryWithBuffer = maxMemoryPredicted * (1 + memoryBuffer / 100);
+              memoryBasedInstances = Math.ceil(peakMemoryWithBuffer / memoryThresholdPerInstance);
+              
+              logger.info(`ML Memory predictions analysis: Max Memory: ${maxMemoryPredicted.toFixed(2)}%, Avg Memory: ${avgMemoryPredicted.toFixed(2)}%`);
+            }
+              
+            logger.info(`ML CPU predictions analysis: Max CPU: ${maxCpuPredicted.toFixed(2)}%, Avg CPU: ${avgCpuPredicted.toFixed(2)}%`);
+            
+            // Calculate required instances based on both CPU and Memory predictions
             // Apply buffer for safety margin
             const cpuBuffer = thresholds?.cpuBuffer || 20; // Default 20% buffer
             const cpuThresholdPerInstance = thresholds?.cpuThresholdPerInstance || 70; // Target CPU per instance
             
             // Calculate instances needed for the peak load with buffer
             const peakCpuWithBuffer = maxCpuPredicted * (1 + cpuBuffer / 100);
-            const recommendedInstances = Math.ceil(peakCpuWithBuffer / cpuThresholdPerInstance);
+            const cpuBasedInstances = Math.ceil(peakCpuWithBuffer / cpuThresholdPerInstance);
+            
+            // Take the maximum of CPU-based and Memory-based instance requirements
+            const recommendedInstances = Math.max(cpuBasedInstances, memoryBasedInstances);
             
             // Ensure within min/max bounds
             const minInstances = thresholds?.minInstances || 1;
             const maxInstances = thresholds?.maxInstances || 10;
             const scaledInstances = Math.min(Math.max(recommendedInstances, minInstances), maxInstances);
             
-            logger.info(`Predictive scaling calculation: Peak CPU with ${cpuBuffer}% buffer: ${peakCpuWithBuffer.toFixed(2)}%`);
-            logger.info(`Recommended instances: ${recommendedInstances}, Scaled to: ${scaledInstances} (min: ${minInstances}, max: ${maxInstances})`);
+            logger.info(`Predictive scaling calculation:`);
+            const cpuPeak = (maxCpuPredicted * (1 + (thresholds?.cpuBuffer || 20) / 100)).toFixed(2);
+            logger.info(`  CPU: Peak ${cpuPeak}% → ${cpuBasedInstances} instances`);
+            if (memoryBasedInstances > 0) {
+              const memoryPeak = (maxMemoryPredicted * (1 + (thresholds?.memoryBuffer || 20) / 100)).toFixed(2);
+              logger.info(`  Memory: Peak ${memoryPeak}% → ${memoryBasedInstances} instances`);
+            }
+            logger.info(`  Recommended: ${recommendedInstances}, Scaled to: ${scaledInstances} (min: ${minInstances}, max: ${maxInstances})`);
             
             // Apply the calculated scaling to the auto scaling group
             try {
@@ -539,13 +615,19 @@ class CloudService {
               timestamp,
               details: {
                 cpuBuffer: cpuBuffer,
+                memoryBuffer: thresholds?.memoryBuffer || 20,
                 predictedMaxCpu: maxCpuPredicted,
                 predictedAvgCpu: avgCpuPredicted,
+                predictedMaxMemory: maxMemoryPredicted,
+                predictedAvgMemory: avgMemoryPredicted,
+                cpuBasedInstances: cpuBasedInstances,
+                memoryBasedInstances: memoryBasedInstances,
                 minInstances: minInstances,
                 maxInstances: maxInstances,
                 recommendedInstances: recommendedInstances,
                 appliedInstances: scaledInstances,
-                predictionCount: cpuPredictions.length,
+                cpuPredictionCount: cpuPredictions.length,
+                memoryPredictionCount: memoryPredictions ? memoryPredictions.length : 0,
                 predictionTimeRange: {
                   start: cpuPredictions[0].time_dt,
                   end: cpuPredictions[cpuPredictions.length - 1].time_dt
